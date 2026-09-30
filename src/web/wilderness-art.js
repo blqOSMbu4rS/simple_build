@@ -2,7 +2,7 @@
 (function(root){
   'use strict';
   const images={},api={draw,environment,gatherOverlay,revision:0};
-  const sources={...root.TownWildernessAssets,...Object.fromEntries(Object.entries({...root.TownWildernessAssetsV2,...root.TownWildernessAssetsV4}).map(([k,v])=>['v2-'+k,v]))};
+  const sources={...root.TownWildernessAssets,...Object.fromEntries(Object.entries({...root.TownWildernessAssetsV2,...root.TownWildernessAssetsV4,...root.TownWildernessAssetsV5}).map(([k,v])=>['v2-'+k,v]))};
   api.ready=Promise.all(Object.entries(sources).map(([key,url])=>new Promise(resolve=>{
     const image=new Image();image.onload=()=>{images[key]=image;api.revision++;resolve(true);};
     image.onerror=()=>resolve(false);image.src=url;
@@ -46,11 +46,14 @@
       const image=images['v2-flue'];
       if(image){
         // Keep the cap's proportions; extend only the stone shaft texture.
-        const cx=x+w/2-6;
-        for(let row=6;row<h;row+=8)c.drawImage(image,24,96,80,56,cx,y+row,12,Math.min(8,h-row));
-        c.drawImage(image,14,32,100,40,x+w/2-8,y,16,6);
+        const cx=x+w/2-6,top=y+12;
+        for(let row=6;row<h-12;row+=8)c.drawImage(image,24,96,80,56,cx,top+row,12,Math.min(8,h-12-row));
+        c.drawImage(image,14,32,100,40,x+w/2-8,top,16,6);
       }
     }else if(p.kind==='hearth'){
+      // The indoor shaft joins the stove behind its kettle, inside installed hearth cells.
+      const shaft=images['v2-flue'];
+      if(shaft)c.drawImage(shaft,24,96,80,56,x+w/2-6,y,12,12);
       // Kettle, arch, firebox and embers are all visible in the actual sprite.
       sprite('hearth',x+2,y+8,w-4,h-8);
       c.save();c.globalAlpha=.22+.14*Math.sin(time*6.5);
@@ -114,9 +117,8 @@
   function environment(c,s,time=0){
     const latest=(s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint))?.artStyle==='creek-v2';
     if(latest&&images['v2-environment']){
-      // The empty yard is aligned with the same fixed simulation floor.
-      c.drawImage(images['v2-environment'],0,0,1920,650,0,0,480,272);
-      c.drawImage(images['v2-environment'],0,650,1920,310,0,272,480,32);
+      // Keep the whole background visible; the scene projection places the shelter.
+      c.drawImage(images['v2-environment'],0,0,480,304);
     }else if(images.environment){
       // Generated ground lip is row 446; align walkable ground with simulation.
       c.drawImage(images.environment,0,0,960,446,0,0,480,272);
@@ -139,8 +141,9 @@
     }
     return true;
   }
-  function gatherOverlay(c,s,time){
-    const p=root.TownWildGather?.sample(s.wilderness);if(!p)return;
+  function gatherOverlay(c,s,time,projectX=x=>x){
+    const pose=root.TownWildGather?.sample(s.wilderness);if(!pose)return;
+    const p={...pose,x:projectX(pose.x)};
     if(['chop','cut'].includes(p.phase)){
       const hit=Math.floor(time*9)%2;box(c,p.x+8,250+hit*5,2,14,'#9b7146');box(c,p.x+4,249+hit*5,9,4,'#818b86');
       box(c,p.x+13,263,3,2,'#977443');

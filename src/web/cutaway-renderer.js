@@ -6,9 +6,24 @@
   function box(c,x,y,w,h,color){c.fillStyle=color;c.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));}
   function poly(c,points,color){c.fillStyle=color;c.beginPath();points.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();c.fill();}
   function houseRect(p,plan){return [(plan.modular?root.TownModules.origin(plan):O)+p.x*G,Y-(p.y+p.h)*G,p.w*G,p.h*G];}
-  function visualLayer(p,plan){
-    const kind=(p.tileSource||p).kind;
-    return plan.artStyle==='creek-v2'&&kind==='flue'?10:p.layer;
+  function siteScale(s){
+    const plan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint);
+    return plan?.artStyle==='creek-v2'?1.8:1;
+  }
+  function project(s,x,y){
+    const k=siteScale(s);return k===1?[x,y]:[247+(x-328)*k,196+(y-272)*k];
+  }
+  function siteTransform(c,s){const k=siteScale(s);if(k!==1){const [x,y]=project(s,0,0);c.translate(x,y);c.scale(k,k);}}
+  function travelX(s,x){
+    if(siteScale(s)===1)return x;
+    const left=project(s,260,272)[0],right=project(s,392,272)[0];
+    const anchors=[[0,0],[35,30],[90,90],[110,120],[148,180],[185,132],[260,left],[392,right],[418,388],[430,442],[480,480]];
+    let display=project(s,x,272)[0];
+    if(x<260||x>392){
+      const index=Math.max(1,anchors.findIndex(a=>a[0]>=x)),[a,b]=[anchors[index-1],anchors[index]];
+      display=a[1]+(x-a[0])*(b[1]-a[1])/(b[0]-a[0]);
+    }
+    return 328+(display-247)/1.8;
   }
   function foregroundStones(c,s,preview,clock=0){
     const plan=s.plan;if(plan?.artStyle!=='creek-v2')return;
@@ -266,6 +281,7 @@
   }
   function viewport(s,preview=false,camera=null){
     if(camera&&!preview)return camera;
+    if(siteScale(s)!==1)return [0,0,480,304];
     if(s.plan?.wilderness&&(preview||s.status==='done'))return [208,148,232,147];
     if(s.plan?.artStyle==='woodland-v3'&&(preview||s.status==='done'))return [104,144,272,160];
     return s.plan?.artStyle?.startsWith('woodland-')&&(preview||s.status==='done')?[120,136,240,152]:[0,0,480,304];
@@ -316,7 +332,7 @@
       if(seen.has(source.id))continue;
       const [x,y,w]=houseRect(source,s.plan);
       let outlet;
-      if(source.asset==='chimney'||source.kind==='flue')outlet=[x+w/2,y];
+      if(source.asset==='chimney'||source.kind==='flue')outlet=[x+w/2,y+(s.plan.artStyle==='creek-v2'&&source.kind==='flue'?12:0)];
       else if(source.kind==='roof'&&s.plan.layout==='stone'&&!s.plan.artStyle)outlet=[x+23,y+5];
       if(!outlet)continue;
       if(p.tileSource){const [tx,ty]=houseRect(p,s.plan);if(outlet[0]<tx||outlet[0]>=tx+G||outlet[1]<ty||outlet[1]>=ty+G)continue;}
@@ -338,8 +354,9 @@
     const wilderness=environmentPlan?.wilderness;
     if(wilderness)root.TownWildernessArt.environment(c,s,time);
     else {if(!retreat||!root.TownCottageArt?.environment(c))ground(c,time);scenery(c,time,retreat);}
+    if(!preview){c.save();if(siteScale(s)!==1)c.translate(0,-76);stock(c,s);c.restore();}
+    c.save();siteTransform(c,s);
     chimneySmoke(c,s,time,preview);
-    if(!preview)stock(c,s);
     const plan=s.plan;if(plan){
       const style=plan.modular?{...plan,layout:plan.recipe.budget.S>plan.recipe.budget.W?'stone':'wood'}:plan;
       const parts=preview?plan.parts:s.installed;
@@ -349,12 +366,12 @@
       const motion=s.active?.motion===root.TownCutawayMotion?.VERSION?root.TownCutawayMotion.sample(s.active):null;
       if(!preview&&motion?.visible&&!plan.gridBuild)layers.push({p:s.active.part,progress:1});
       // Legacy in-flight saves also hide their component until the task finishes.
-      layers.sort((a,b)=>visualLayer(a.p,plan)-visualLayer(b.p,plan)||a.p.y-b.p.y);
+      layers.sort((a,b)=>a.p.layer-b.p.layer||a.p.y-b.p.y);
       for(const {p,progress}of layers){if(plan.artStyle==='creek-v2'&&(p.tileSource||p).kind==='foundation')continue;c.save();if(progress<1){const [x,y,w,h]=houseRect(p,style);c.beginPath();c.rect(x-8,y+h*(1-progress)-7,w+16,h*progress+15);c.clip();}if(plan.modular)modulePart(c,p,style,time);else drawPart(c,p,style,time);c.restore();}
       foregroundStones(c,s,preview,time);
     }
     if(!retreat&&!wilderness)shrubs(c,time);
-    if(wilderness&&!preview)root.TownWildernessArt.gatherOverlay(c,s,time);
+    if(wilderness&&!preview)root.TownWildernessArt.gatherOverlay(c,s,time,x=>travelX(s,x));
     root.TownCutawayLighting?.drawEmitters(c,s,time,preview);
     if(preview&&wilderness){pet(c,{x:265,y:272},1,0,'B',false,true);}
     else if(preview&&s.plan?.artStyle?.startsWith('woodland-')){
@@ -383,12 +400,12 @@
         }
       }
       const gathering=wilderness?root.TownWildGather.sample(s.wilderness):null;
-      for(let i=0;i<2;i++)pet(c,s.pets[i],i,t,
+      for(let i=0;i<2;i++)pet(c,{...s.pets[i],x:travelX(s,s.pets[i].x)},i,t,
         i===1&&gathering?gathering.held:
         a&&a.workers.includes(i)?pose?pose.held:['carry','climb'].includes(a.phase)?a.part.material:null:null,
         a&&a.workers.includes(i)&&(pose?pose.hammer:a.phase==='install'),!s.plan||!!s.plan.residential);
     }
-    c.restore();
+    c.restore();c.restore();
   }
   // A separate transparent pass supplies only installed material to the lighting shader.
   // Reuse the same clipping/layer order so unfinished cells never acquire surface relief.
@@ -397,8 +414,8 @@
     c.imageSmoothingEnabled=false;
     const plan=s.plan;if(!plan)return;
     const style=plan.modular?{...plan,layout:plan.recipe.budget.S>plan.recipe.budget.W?'stone':'wood'}:plan;
-    c.save();c.scale(canvas.width/480,canvas.height/304);
-    for(const p of [...(preview?plan.parts:s.installed)].sort((a,b)=>visualLayer(a,plan)-visualLayer(b,plan)||a.y-b.y)){
+    c.save();c.scale(canvas.width/480,canvas.height/304);siteTransform(c,s);
+    for(const p of [...(preview?plan.parts:s.installed)].sort((a,b)=>a.layer-b.layer||a.y-b.y)){
       const source=p.tileSource||p;
       if(plan.artStyle==='creek-v2'&&source.kind==='foundation')continue;
       if(occluders&&(source.kind==='wall'||source.asset==='wall')){
@@ -423,5 +440,5 @@
     if(canvas.dataset)canvas.dataset.lighting='canvas2d';
     drawBase(canvas,s,clock,preview,false,camera);
   }
-  root.TownCutawayRenderer={draw,drawBase,drawSurface,viewport,drawComponent:modulePart,drawPart,smoke};
+  root.TownCutawayRenderer={draw,drawBase,drawSurface,viewport,project,siteScale,drawComponent:modulePart,drawPart,smoke};
 })(globalThis);

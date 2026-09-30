@@ -188,7 +188,8 @@
       }
       p.lightData.fill(0);p.colorData.fill(0);
       collectLights(s,preview,clock).forEach((light,i)=>{
-        p.lightData.set([light.x,light.y,light.radius,light.strength],i*4);p.colorData.set(light.color,i*3);
+        const R=root.TownCutawayRenderer,[x,y]=R.project(s,light.x,light.y);
+        p.lightData.set([x,y,light.radius*R.siteScale(s),light.strength],i*4);p.colorData.set(light.color,i*3);
       });
       gl.uniform4fv(p.lightLocation,p.lightData);gl.uniform3fv(p.colorLocation,p.colorData);
       gl.uniform2f(p.pixelLocation,1/p.output.width,1/p.output.height);
