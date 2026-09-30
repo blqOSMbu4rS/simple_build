@@ -1,8 +1,8 @@
 /* Separate sprites, geology and source animation; installed tiles own the house. */
 (function(root){
   'use strict';
-  const images={},api={draw,environment,gatherOverlay,revision:0};
-  const sources={...root.TownWildernessAssets,...Object.fromEntries(Object.entries({...root.TownWildernessAssetsV2,...root.TownWildernessAssetsV4,...root.TownWildernessAssetsV5}).map(([k,v])=>['v2-'+k,v]))};
+  const images={},api={draw,environment,gatherOverlay,windowPanes,revision:0};
+  const sources={...root.TownWildernessAssets,...Object.fromEntries(Object.entries({...root.TownWildernessAssetsV2,...root.TownWildernessAssetsV4,...root.TownWildernessAssetsV5,...root.TownWildernessAssetsV6}).map(([k,v])=>['v2-'+k,v]))};
   api.ready=Promise.all(Object.entries(sources).map(([key,url])=>new Promise(resolve=>{
     const image=new Image();image.onload=()=>{images[key]=image;api.revision++;resolve(true);};
     image.onerror=()=>resolve(false);image.src=url;
@@ -18,6 +18,9 @@
       box(c,x+1,y+1,w-2,h-2,'#666452');box(c,x+2,y+2,w-4,2,'#878370');
     }
     c.restore();
+  }
+  function windowPanes(x,y,w,h){
+    return [[8,21,22,15],[34,21,22,15],[8,40,22,13],[34,40,22,13]].map(([px,py,pw,ph])=>[x+px*w/64,y+py*h/64,pw*w/64,ph*h/64]);
   }
   function drawV2(c,p,x,y,w,h,time){
     const sprite=(name,xx=x,yy=y,ww=w,hh=h)=>{const image=images['v2-'+name];if(image)c.drawImage(image,xx,yy,ww,hh);};
@@ -53,20 +56,26 @@
     }else if(p.kind==='hearth'){
       // The indoor shaft joins the stove behind its kettle, inside installed hearth cells.
       const shaft=images['v2-flue'];
-      if(shaft)c.drawImage(shaft,24,96,80,56,x+w/2-6,y,12,12);
+      box(c,x+w/2-6,y,12,24,'#454b4b');
+      if(shaft)for(let row=0;row<24;row+=8)c.drawImage(shaft,24,96,80,56,x+w/2-6,y+row,12,8);
       // Kettle, arch, firebox and embers are all visible in the actual sprite.
       sprite('hearth',x+2,y+8,w-4,h-8);
       c.save();c.globalAlpha=.22+.14*Math.sin(time*6.5);
       box(c,x+w/2-2,y+h-10,4,2,'#e5a84d');c.restore();
     }else if(p.kind==='bed'){
       // Three construction cells include the wall clearance and aisle; the
-      // visible sleeping surface is 32 units (2 m), never the whole footprint.
-      if(w===48)sprite('bed',x+7,y,32,h);
+      // visible sleeping surface is 40 units (2.5 m), ending beside the hearth.
+      if(w===48)sprite('bed',x+7,y-2,40,h+2);
       else sprite('bed',x+5,y,w-5,h);
     }
     else if(p.kind==='bedding'){
       c.save();c.globalAlpha=.35;
-      for(let i=w===48?8:6;i<(w===48?38:w-3);i+=5)box(c,x+i,y+8+(i%3)/2,2,.5,'#c29e55');c.restore();
+      for(let i=w===48?8:6;i<(w===48?46:w-3);i+=5)box(c,x+i,y+8+(i%3)/2,2,.5,'#c29e55');c.restore();
+    }else if(p.kind==='window'){
+      // Remove the baked landscape; only the wood frame and mullions remain.
+      c.save();c.beginPath();c.rect(x,y,w,h);
+      for(const pane of windowPanes(x,y,w,h))c.rect(...pane);
+      c.clip('evenodd');sprite('window');c.restore();
     }else if(p.kind==='roof-seal'){
       for(let i=1;i<4;i++)box(c,x+12+i*19,y+10+i%2,3,1,'#735036');
     }else sprite(p.kind);

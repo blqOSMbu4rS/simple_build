@@ -11,7 +11,7 @@
     return plan?.artStyle==='creek-v2'?1.8:1;
   }
   function project(s,x,y){
-    const k=siteScale(s);return k===1?[x,y]:[247+(x-328)*k,196+(y-272)*k];
+    const k=siteScale(s);return k===1?[x,y]:[247+(x-328)*k,184+(y-272)*k];
   }
   function siteTransform(c,s){const k=siteScale(s);if(k!==1){const [x,y]=project(s,0,0);c.translate(x,y);c.scale(k,k);}}
   function travelX(s,x){
@@ -24,6 +24,20 @@
       display=a[1]+(x-a[0])*(b[1]-a[1])/(b[0]-a[0]);
     }
     return 328+(display-247)/1.8;
+  }
+  function renderLayer(p,plan){return plan.artStyle==='creek-v2'&&(p.tileSource||p).kind==='flue'?5.5:p.layer;}
+  function windowGlass(c,s,preview,surface=false,clock=0){
+    const plan=s.plan;if(plan?.artStyle!=='creek-v2')return;
+    for(const p of (preview?plan.parts:s.installed).filter(p=>p.kind==='window')){
+      const source=p.tileSource||p,[x,y,w,h]=houseRect(source,plan);
+      c.save();const [tx,ty,tw,th]=houseRect(p,plan);
+      c.beginPath();c.rect(tx,ty,tw,th);c.clip();c.beginPath();
+      for(const pane of root.TownWildernessArt.windowPanes(x,y,w,h))c.rect(...pane);
+      c.clip();
+      if(surface){c.globalCompositeOperation='destination-out';c.fillRect(x,y,w,h);}
+      else{const k=siteScale(s),[ox,oy]=project(s,0,0);c.translate(-ox/k,-oy/k);c.scale(1/k,1/k);root.TownWildernessArt.environment(c,s,clock);}
+      c.restore();
+    }
   }
   function foregroundStones(c,s,preview,clock=0){
     const plan=s.plan;if(plan?.artStyle!=='creek-v2')return;
@@ -354,7 +368,7 @@
     const wilderness=environmentPlan?.wilderness;
     if(wilderness)root.TownWildernessArt.environment(c,s,time);
     else {if(!retreat||!root.TownCottageArt?.environment(c))ground(c,time);scenery(c,time,retreat);}
-    if(!preview){c.save();if(siteScale(s)!==1)c.translate(0,-76);stock(c,s);c.restore();}
+    if(!preview){c.save();if(siteScale(s)!==1)c.translate(0,-88);stock(c,s);c.restore();}
     c.save();siteTransform(c,s);
     chimneySmoke(c,s,time,preview);
     const plan=s.plan;if(plan){
@@ -366,9 +380,10 @@
       const motion=s.active?.motion===root.TownCutawayMotion?.VERSION?root.TownCutawayMotion.sample(s.active):null;
       if(!preview&&motion?.visible&&!plan.gridBuild)layers.push({p:s.active.part,progress:1});
       // Legacy in-flight saves also hide their component until the task finishes.
-      layers.sort((a,b)=>a.p.layer-b.p.layer||a.p.y-b.p.y);
+      layers.sort((a,b)=>renderLayer(a.p,plan)-renderLayer(b.p,plan)||a.p.y-b.p.y);
       for(const {p,progress}of layers){if(plan.artStyle==='creek-v2'&&(p.tileSource||p).kind==='foundation')continue;c.save();if(progress<1){const [x,y,w,h]=houseRect(p,style);c.beginPath();c.rect(x-8,y+h*(1-progress)-7,w+16,h*progress+15);c.clip();}if(plan.modular)modulePart(c,p,style,time);else drawPart(c,p,style,time);c.restore();}
       foregroundStones(c,s,preview,time);
+      windowGlass(c,s,preview,false,time);
     }
     if(!retreat&&!wilderness)shrubs(c,time);
     if(wilderness&&!preview)root.TownWildernessArt.gatherOverlay(c,s,time,x=>travelX(s,x));
@@ -415,7 +430,7 @@
     const plan=s.plan;if(!plan)return;
     const style=plan.modular?{...plan,layout:plan.recipe.budget.S>plan.recipe.budget.W?'stone':'wood'}:plan;
     c.save();c.scale(canvas.width/480,canvas.height/304);siteTransform(c,s);
-    for(const p of [...(preview?plan.parts:s.installed)].sort((a,b)=>a.layer-b.layer||a.y-b.y)){
+    for(const p of [...(preview?plan.parts:s.installed)].sort((a,b)=>renderLayer(a,plan)-renderLayer(b,plan)||a.y-b.y)){
       const source=p.tileSource||p;
       if(plan.artStyle==='creek-v2'&&source.kind==='foundation')continue;
       if(occluders&&(source.kind==='wall'||source.asset==='wall')){
@@ -433,6 +448,7 @@
       if(plan.modular)modulePart(c,p,style,time);else drawPart(c,p,style,time);
     }
     foregroundStones(c,s,preview,clock);
+    windowGlass(c,s,preview,true,clock);
     c.restore();
   }
   function draw(canvas,s,clock=0,preview=false,camera=null){
