@@ -5,6 +5,42 @@
   try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||p.sourcePlanId===data.selected||(/^cutaway-creek-shelter-v[12]/.test(String(data.selected))&&p.sourcePlanId==='cutaway-creek-shelter-v3')));if(state.status==='building'||state.status==='finishing')state.paused=true;}}
   catch(err){console.warn('2D study restore:',err);state=E.create(42);}
   if(state.status==='idle')state.blueprint=plans[selected].id;
+  // Camera belongs to this view, never to the construction state or saved plan.
+  const scene=$('scene');let camera=null,drag=null;
+  const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
+  function setCamera(x,y,w,h){
+    w=clamp(w,80,480);h=clamp(h,304/6,304);
+    camera=[clamp(x,0,480-w),clamp(y,0,304-h),w,h];
+  }
+  function endDrag(){
+    if(drag&&scene.hasPointerCapture(drag.id))scene.releasePointerCapture(drag.id);
+    drag=null;scene.classList.remove('dragging');
+  }
+  function resetView(){endDrag();camera=null;}
+  scene.addEventListener('pointerdown',event=>{
+    if(event.button!==0||drag)return;
+    const view=R.viewport(state,false,camera);
+    drag={id:event.pointerId,x:event.clientX,y:event.clientY,view:[...view]};
+    scene.setPointerCapture(event.pointerId);scene.classList.add('dragging');event.preventDefault();
+  });
+  scene.addEventListener('pointermove',event=>{
+    if(!drag||drag.id!==event.pointerId)return;
+    const rect=scene.getBoundingClientRect(),[x,y,w,h]=drag.view;
+    setCamera(x-(event.clientX-drag.x)*w/rect.width,y-(event.clientY-drag.y)*h/rect.height,w,h);
+  });
+  for(const type of ['pointerup','pointercancel','lostpointercapture'])scene.addEventListener(type,event=>{
+    if(drag?.id===event.pointerId)endDrag();
+  });
+  window.addEventListener('blur',endDrag);
+  scene.addEventListener('wheel',event=>{
+    event.preventDefault();endDrag();
+    const rect=scene.getBoundingClientRect(),[x,y,w,h]=R.viewport(state,false,camera);
+    const px=clamp((event.clientX-rect.left)/rect.width,0,1),py=clamp((event.clientY-rect.top)/rect.height,0,1);
+    const delta=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?rect.height:1);
+    const factor=clamp(Math.exp(clamp(delta,-1000,1000)*.0015),Math.max(80/w,304/6/h),Math.min(480/w,304/h));
+    setCamera(x+px*w*(1-factor),y+py*h*(1-factor),w*factor,h*factor);
+  },{passive:false});
+  $('reset-view').onclick=resetView;
   function persist(){try{localStorage.setItem(KEY,JSON.stringify({selected:plans[selected].id,state:E.save(state)}));lastSave=clock;}catch(err){$('status').textContent='自动保存不可用';console.warn(err);}}
   function update(){
     const plan=state.plan||plans[selected],inv=E.inventory(state);
@@ -41,7 +77,7 @@
     const desc=document.createElement('small');desc.textContent=p.description;
     button.append(canvas,title,desc);$('plans').append(button);
     R.draw(canvas,{...state,plan:p,installed:p.parts},0,true);
-    button.onclick=()=>{if(state.status!=='idle')return;selected=i;state.blueprint=p.id;update();persist();};
+    button.onclick=()=>{if(state.status!=='idle')return;selected=i;state.blueprint=p.id;resetView();update();persist();};
   }
   Promise.all([TownCottageArt.ready,TownWildernessArt.ready]).then(()=>{
     document.querySelectorAll('.card canvas').forEach((canvas,i)=>R.draw(canvas,{...state,plan:plans[i],installed:plans[i].parts},0,true));
@@ -61,14 +97,14 @@
     update();persist();
   };
   $('play').onclick=()=>{
-    if(state.status==='done'){E.next(state);state.blueprint=plans[selected].id;}
+    if(state.status==='done'){E.next(state);state.blueprint=plans[selected].id;resetView();}
     else if(state.status==='building'||state.status==='finishing')state.paused=!state.paused;
     else if(state.status==='waiting'){state.paused=state.plan?.wilderness?!state.paused:false;}
     else{state.blueprint=plans[selected].id;E.start(state);}
     update();persist();
   };
   $('speed').onchange=()=>{state.speed=Number($('speed').value);update();persist();};
-  $('reset').onclick=()=>{state=E.create(42);state.blueprint=plans[selected].id;update();persist();};
+  $('reset').onclick=()=>{state=E.create(42);state.blueprint=plans[selected].id;resetView();update();persist();};
   let previous=performance.now(),acc=0,ui=0,sceneryClock=state.time;
   function frame(now){
     const elapsed=Math.min((now-previous)/1000,.1);previous=now;
@@ -76,7 +112,7 @@
       const previousStatus=state.status;
       try{while(acc>=1/30){E.advance(state,1/30);acc-=1/30;}}catch(err){state.paused=true;state.message='施工暂停：'+err.message;console.error(err);}
       if(!state.paused)sceneryClock+=elapsed;
-      R.draw($('scene'),state,sceneryClock);
+      R.draw(scene,state,sceneryClock,false,camera);
       ui+=elapsed;if(ui>.14){update();ui=0;}
       if(clock-lastSave>4||(state.status==='done'&&previousStatus!=='done'))persist();
     }requestAnimationFrame(frame);

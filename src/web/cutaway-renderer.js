@@ -247,7 +247,8 @@
     }
     c.restore();
   }
-  function viewport(s,preview=false){
+  function viewport(s,preview=false,camera=null){
+    if(camera&&!preview)return camera;
     if(s.plan?.wilderness&&(preview||s.status==='done'))return [208,148,232,147];
     if(s.plan?.artStyle==='woodland-v3'&&(preview||s.status==='done'))return [104,144,272,160];
     return s.plan?.artStyle?.startsWith('woodland-')&&(preview||s.status==='done')?[120,136,240,152]:[0,0,480,304];
@@ -311,8 +312,8 @@
       c.restore();
     }
   }
-  function drawBase(canvas,s,clock=0,preview=false,world=false){
-    const c=canvas.getContext('2d'),[vx,vy,vw,vh]=world?[0,0,480,304]:viewport(s,preview);
+  function drawBase(canvas,s,clock=0,preview=false,world=false,camera=null){
+    const c=canvas.getContext('2d'),[vx,vy,vw,vh]=world?[0,0,480,304]:viewport(s,preview,camera);
     c.imageSmoothingEnabled=false;c.save();c.scale(canvas.width/vw,canvas.height/vh);c.translate(-vx,-vy);
     const environmentPlan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint);
     const retreat=environmentPlan?.artStyle==='woodland-v3';
@@ -397,10 +398,10 @@
     }
     c.restore();
   }
-  function draw(canvas,s,clock=0,preview=false){
-    if(root.TownCutawayLighting?.render(canvas,s,clock,preview))return;
+  function draw(canvas,s,clock=0,preview=false,camera=null){
+    if(root.TownCutawayLighting?.render(canvas,s,clock,preview,camera))return;
     if(canvas.dataset)canvas.dataset.lighting='canvas2d';
-    drawBase(canvas,s,clock,preview);
+    drawBase(canvas,s,clock,preview,false,camera);
   }
   root.TownCutawayRenderer={draw,drawBase,drawSurface,viewport,drawComponent:modulePart,drawPart,smoke};
 })(globalThis);

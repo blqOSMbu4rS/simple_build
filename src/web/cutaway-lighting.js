@@ -152,7 +152,7 @@
       throw error;
     }finally{for(const shader of shaders)gl.deleteShader(shader);}
   }
-  function render(canvas,s,clock,preview){
+  function render(canvas,s,clock,preview,camera=null){
     if(unavailable||typeof document==='undefined')return false;
     try{
       if(!pipeline){pipeline=create();if(!pipeline){unavailable=true;return false;}}
@@ -195,7 +195,7 @@
       gl.uniform1f(p.wildernessLocation,s.plan?.wilderness?1:0);
       gl.viewport(0,0,p.output.width,p.output.height);gl.drawArrays(gl.TRIANGLES,0,6);
       const c=canvas.getContext('2d');c.imageSmoothingEnabled=false;
-      c.drawImage(p.output,...root.TownCutawayRenderer.viewport(s,preview).map(v=>v*density),0,0,canvas.width,canvas.height);
+      c.drawImage(p.output,...root.TownCutawayRenderer.viewport(s,preview,camera).map(v=>v*density),0,0,canvas.width,canvas.height);
       canvas.dataset.lighting='webgl';return true;
     }catch(error){unavailable=true;console.warn('Pixel lighting unavailable; using Canvas 2D.',error);return false;}
   }
