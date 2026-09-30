@@ -331,6 +331,7 @@
       for(const {p,progress}of layers){c.save();if(progress<1){const [x,y,w,h]=houseRect(p,style);c.beginPath();c.rect(x-8,y+h*(1-progress)-7,w+16,h*progress+15);c.clip();}if(plan.modular)modulePart(c,p,style,time);else drawPart(c,p,style,time);c.restore();}
     }
     if(!retreat)shrubs(c,time);
+    root.TownCutawayLighting?.drawEmitters(c,s,time,preview);
     if(preview&&s.plan?.artStyle?.startsWith('woodland-')){
       pet(c,{x:230,y:256},0,0,null,false,true);
     }else if(preview&&s.plan?.residential){

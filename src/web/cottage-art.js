@@ -11,7 +11,20 @@
   const frontRegions={shelf:[59,14,393,493],table:[476,143,449,356],chair:[950,127,332,376],
     bench:[46,606,557,239],cabinet:[620,515,292,333],plant:[954,507,337,341],
     curtains:[66,859,518,337],'wall-shelf':[706,851,541,347]};
-  const api={draw,environment,revision:0};
+  const api={draw,environment,lampAnchor,revision:0};
+  // Flame coordinates are authored in the independent furniture atlas. Keep
+  // presentation anchors separate from the immutable construction/save plan.
+  function lampAnchor(plan,source){
+    if(plan.artStyle!=='woodland-v3')return null;
+    const spec={lamp:['desk','table',821,195],'reading-lamp':['books','shelf',236,283],
+      'cabinet-lamp':['cabinet','cabinet',797,590],'wall-shelf':['wall-shelf','wall-shelf',1018,1137]}[source.id];
+    if(!spec)return null;
+    const part=plan.parts.map(p=>p.tileSource||p).find(p=>p.id===spec[0]);if(!part)return null;
+    const r=frontRegions[spec[1]],w=part.w*16,h=part.h*16,scale=Math.min((w-1)/r[2],(h-1)/r[3]);
+    const dw=Math.round(r[2]*scale*2)/2,dh=Math.round(r[3]*scale*2)/2;
+    return {x:240+part.x*16+(w-dw)/2+(spec[2]-r[0])*dw/r[2],
+      y:272-(part.y+part.h)*16+h-dh+(spec[3]-r[1])*dh/r[3],glass:spec[1]==='table'?[5,2.5]:[3,4]};
+  }
   function loadImage(source,accept){return typeof Image==='undefined'?Promise.resolve(false):new Promise(resolve=>{
     if(!source){resolve(false);return;}
     const image=new Image();

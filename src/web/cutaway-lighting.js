@@ -59,23 +59,53 @@
     const result=[],seen=new Set(),plan=s.plan;
     const origin=plan.modular?root.TownModules.origin(plan):240;
     for(const p of preview?plan.parts:s.installed){
-      const source=p.tileSource||p,kind=source.kind||source.asset;
+      const source=p.tileSource||p;
+      const extra=plan.artStyle==='woodland-v3'&&source.kind==='wall-shelf';
+      const kind=extra?'lamp':source.kind||source.asset;
       if(!['lamp','hearth','window'].includes(kind)||seen.has(source.id))continue;
       const left=origin+source.x*16,top=272-(source.y+source.h)*16;
-      const x=left+(source.light?.x??(kind==='lamp'?8:source.w*8));
-      const y=top+(source.light?.y??(kind==='lamp'?9:kind==='hearth'?source.h*16-10:source.h*8));
+      const anchor=root.TownCottageArt?.lampAnchor(plan,source);
+      // Existing lamp tasks still activate from their original installation
+      // cell. Only the displayed light centre follows the atlas's actual flame.
+      const gateX=extra?anchor?.x:left+(source.light?.x??(kind==='lamp'?8:source.w*8));
+      const gateY=extra?anchor?.y:top+(source.light?.y??(kind==='lamp'?9:kind==='hearth'?source.h*16-10:source.h*8));
+      if(gateX==null||gateY==null)continue;
+      const x=anchor?.x??gateX,y=anchor?.y??gateY;
       if(p.tileSource){
         const tx=origin+p.x*16,ty=272-(p.y+1)*16;
-        if(x<tx||x>=tx+16||y<ty||y>=ty+16)continue;
+        if(gateX<tx||gateX>=tx+16||gateY<ty||gateY>=ty+16)continue;
       }
       seen.add(source.id);
       const time=preview?0:Math.floor(clock*12)/12;
-      const pulse=kind==='window'?1:1+(kind==='hearth'?0.13:0.025)*Math.sin(time*(kind==='hearth'?7:2)+source.x)+(kind==='hearth'?0.06:0.015)*Math.sin(time*11+source.y);
-      result.push({x,y,radius:(source.light?.radius??(kind==='window'?65:kind==='hearth'?100:115))*(kind==='hearth'?Math.sqrt(pulse):1),
-        strength:(source.light?.strength??(kind==='window'?0.4:kind==='hearth'?1.0:1.15))*pulse,
+      const pulse=preview||kind==='window'?1:Math.max(.57,Math.min(1.08,.84+.17*Math.sin(time*4.9+source.x)+.09*Math.sin(time*8.3+source.y)+.045*Math.sin(time*16.7+source.x*.3)));
+      result.push({x,y,kind,pulse,glass:anchor?.glass,radius:(source.light?.radius??(extra?45:kind==='window'?65:kind==='hearth'?100:115))*(kind==='window'?1:.9+.1*pulse),
+        strength:(source.light?.strength??(extra?0.18:kind==='window'?0.4:kind==='hearth'?1.0:1.15))*pulse,
         color:source.light?.color??(kind==='hearth'?[1,0.48,0.17]:[1,0.72,0.35])});
     }
     return result.slice(0,MAX_LIGHTS);
+  }
+
+  function drawEmitters(c,s,clock=0,preview=false){
+    const time=preview?0:Math.floor(clock*12)/12;
+    for(const light of collectLights(s,preview,time)){
+      if(light.kind!=='lamp')continue;
+      const {x,y,pulse}=light,radius=12+6*pulse;
+      c.save();
+      const glow=c.createRadialGradient(x,y,0,x,y,radius);
+      glow.addColorStop(0,`rgba(255,181,76,${.16*pulse})`);
+      glow.addColorStop(.35,`rgba(242,143,49,${.075*pulse})`);glow.addColorStop(1,'rgba(242,143,49,0)');
+      c.fillStyle=glow;c.fillRect(x-radius,y-radius,radius*2,radius*2);
+      if(light.glass){
+        // Tint only the glass interior, then repaint the tiny flame. The brass
+        // frame and independent furniture sprite retain their authored detail.
+        const [w,h]=light.glass;
+        c.fillStyle=`rgba(111,51,13,${.25+(1-pulse)*.7})`;c.fillRect(x-w/2,y-h/2,w,h);
+        const height=1.5+Math.round(pulse*3)/2,dx=Math.round(Math.sin(time*7+x)*.6)/2;
+        c.fillStyle='#e99a36';c.fillRect(Math.round((x+dx-.5)*2)/2,y+1-height,1.5,height);
+        c.fillStyle=pulse>.85?'#ffe7a0':'#f5bd59';c.fillRect(Math.round((x+dx)*2)/2,y+.5-height/2,.5,height/2);
+      }
+      c.restore();
+    }
   }
 
   let pipeline,unavailable=false;
@@ -166,5 +196,5 @@
       canvas.dataset.lighting='webgl';return true;
     }catch(error){unavailable=true;console.warn('Pixel lighting unavailable; using Canvas 2D.',error);return false;}
   }
-  root.TownCutawayLighting={render,collectLights};
+  root.TownCutawayLighting={render,collectLights,drawEmitters};
 })(globalThis);
