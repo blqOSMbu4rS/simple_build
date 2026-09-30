@@ -6,28 +6,30 @@
   function box(c,x,y,w,h,color){c.fillStyle=color;c.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));}
   function poly(c,points,color){c.fillStyle=color;c.beginPath();points.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();c.fill();}
   function houseRect(p,plan){return [(plan.modular?root.TownModules.origin(plan):O)+p.x*G,Y-(p.y+p.h)*G,p.w*G,p.h*G];}
-  function tree(c,x,y,scale=1){
+  function tree(c,x,y,scale=1,time=0){
     c.save();c.translate(x,y);c.scale(scale,scale);
     box(c,-7,-83,15,83,'#5c604b');box(c,-4,-80,5,77,'#967b59');
+    c.translate(Math.round(Math.sin(time*1.4+x)*1.5),0);
     box(c,-24,-99,12,8,'#5d7657');box(c,12,-94,12,7,'#5d7657');
     for(const [bx,by,w,h,color]of [[-34,-111,68,29,'#4d7356'],[-40,-94,80,28,'#5f875e'],[-31,-127,61,27,'#608762'],[-20,-142,42,25,'#729569'],[-29,-84,60,14,'#456b50']])box(c,bx,by,w,h,color);
     for(let i=0;i<20;i++){const xx=(i*23)%66-33,yy=-132+(i*17)%61;if(Math.abs(xx)<30)box(c,xx,yy,6,4,i%3?'#89a973':'#a5b984');}
     box(c,-36,-82,10,7,'#779663');box(c,28,-91,11,8,'#718e62');c.restore();
   }
-  function shrubs(c){
+  function shrubs(c,time=0){
     for(const [x,s]of [[12,1],[75,.8],[113,.65],[458,.82]]){
       c.save();c.translate(x,273);c.scale(s,s);
+      c.translate(Math.round(Math.sin(time*1.7+x)),0);
       box(c,-12,-11,27,10,'#527a55');box(c,-8,-18,15,12,'#6d955d');box(c,2,-15,13,11,'#779e65');
       for(let i=0;i<5;i++){box(c,-9+i*5,-12-(i%3)*3,3,3,i%2?'#e9c281':'#f1d3a5');box(c,-8+i*5,-14-(i%3)*3,1,1,'#fff0ca');}
       c.restore();
     }
   }
-  function ground(c){
+  function ground(c,time=0){
     box(c,0,0,480,304,'#a9c1b5');box(c,0,0,480,116,'#bcd0bd');
     box(c,374,34,25,25,'#f1db9e');
     poly(c,[[0,194],[65,164],[117,184],[184,151],[237,181],[312,154],[397,188],[480,161],[480,274],[0,274]],'#94afa2');
     poly(c,[[0,224],[73,200],[142,215],[223,188],[296,217],[375,194],[480,213],[480,273],[0,273]],'#7d9e8d');
-    tree(c,31,269,1.08);tree(c,458,269,.88);
+    tree(c,31,269,1.08,time);tree(c,458,269,.88,time);
     for(let i=0;i<14;i++){const x=i*38-12;box(c,x,250,3,20,'#718d70');box(c,x-7,244,17,7,'#83a479');box(c,x-4,237,11,9,'#91ad82');}
     box(c,0,269,480,7,'#648363');box(c,0,276,480,28,'#866d53');
     for(let i=0;i<80;i++){const x=i*79%480,y=280+i*37%22;box(c,x,y,3,2,i%2?'#9c8161':'#6c634e');}
@@ -43,17 +45,41 @@
       }
     }
   }
-  function drawPart(c,p,plan){
+  // Only flexible sprite regions move. The pot and curtain rail stay anchored;
+  // the caller's construction-cell clip also applies to the displaced pixels.
+  const movingSprites=new WeakMap();
+  function movingCottagePart(c,p,x,y,w,h,time){
+    let cached=movingSprites.get(p),revision=root.TownCottageArt.revision;
+    if(!cached||cached.revision!==revision){
+      const canvas=document.createElement('canvas');canvas.width=w*2;canvas.height=h*2;
+      const context=canvas.getContext('2d');context.scale(2,2);
+      root.TownCottageArt.draw(context,p,0,0,w,h);
+      cached={canvas,revision};movingSprites.set(p,cached);
+    }
+    c.save();c.beginPath();c.rect(x,y,w,h);c.clip();c.imageSmoothingEnabled=false;
+    for(let row=0;row<h;row+=2){
+      const flexible=p.kind==='curtains'?Math.max(0,(row-3)/(h-3)):p.kind==='ivy'?row/h:Math.max(0,(h-10-row)/(h-10));
+      const dx=Math.round(Math.sin(time*1.6+p.x*.7+row*.045)*flexible*2)/2;
+      const band=Math.min(2,h-row);
+      c.drawImage(cached.canvas,0,row*2,w*2,band*2,x+dx,y+row,w,band);
+    }
+    c.restore();
+  }
+  function drawPart(c,p,plan,time=0){
     if(p.tileSource){
       const [x,y]=houseRect(p,plan);
       c.save();c.beginPath();c.rect(x,y,G,G);c.clip();
       // The square is a construction boundary, not an opaque background.
       // Keep this component's transparent pixels, roof slope and fine details.
-      drawPart(c,p.tileSource,plan);
+      drawPart(c,p.tileSource,plan,time);
       c.restore();return;
     }
     const [x,y,w,h]=houseRect(p,plan),pal=palettes[plan.layout];
-    if(plan.artStyle?.startsWith('woodland-')&&root.TownCottageArt){root.TownCottageArt.draw(c,p,x,y,w,h);return;}
+    if(plan.artStyle?.startsWith('woodland-')&&root.TownCottageArt){
+      if(time&&typeof document!=='undefined'&&['plant','curtains','ivy'].includes(p.kind))movingCottagePart(c,p,x,y,w,h,time);
+      else root.TownCottageArt.draw(c,p,x,y,w,h);
+      return;
+    }
     if(p.kind==='foundation'){
       box(c,x,y,w,h,pal.edge);box(c,x+2,y+2,w-4,h-3,p.material==='S'?'#9ca7a4':'#ac8153');
       for(let i=0;i<w;i+=22)box(c,x+i+7,y+3,9,2,'#c5b69a');
@@ -110,7 +136,12 @@
       box(c,x-3,y+h-5,w+6,4,'#65483e');
     }else if(p.kind==='hearth'){
       box(c,x+3,y+3,w-7,h-3,'#817a70');box(c,x+5,y+4,w-11,3,'#b4a69a');
-      box(c,x+8,y+h-19,w-16,17,'#3b3735');box(c,x+11,y+h-12,7,9,'#d77944');box(c,x+15,y+h-17,5,12,'#edb45e');
+      box(c,x+8,y+h-19,w-16,17,'#3b3735');
+      for(let i=0;i<3;i++){
+        const height=7+Math.round((Math.sin(time*7+i*2+p.x)+1)*3),fx=x+11+i*3;
+        box(c,fx,y+h-4-height,4,height,i===1?'#edb45e':'#d77944');
+        box(c,fx+1,y+h-8,2,4,'#f4ce7a');
+      }
     }else if(p.kind==='bed'){
       box(c,x+1,y+h-10,w-2,10,'#604a37');box(c,x+3,y+h-12,w-7,6,'#b87560');box(c,x+4,y+h-13,13,6,'#eee1ba');
       box(c,x+4,y+h-3,3,5,'#533e32');box(c,x+w-8,y+h-3,3,5,'#533e32');
@@ -141,7 +172,7 @@
       box(c,x,y+h-10,w,4,'#b88c5a');box(c,x+4,y+h-6,3,6,'#694d37');box(c,x+w-7,y+h-6,3,6,'#694d37');
     }else if(p.kind==='planter'){
       box(c,x+1,y+h-9,w-2,9,'#684e3b');box(c,x+3,y+h-8,w-6,3,'#a7784d');
-      for(let i=5;i<w-2;i+=9){box(c,x+i,y+h-15,2,8,'#5c7e4e');box(c,x+i-3,y+h-16,5,4,'#7a9e61');box(c,x+i+1,y+h-20,5,5,'#639258');box(c,x+i,y+h-21,3,3,i%2?'#ebbc89':'#e3a5a0');}
+      for(let i=5;i<w-2;i+=9){const dx=Math.round(Math.sin(time*1.6+i+p.x));box(c,x+i,y+h-15,2,8,'#5c7e4e');box(c,x+i-3+dx,y+h-16,5,4,'#7a9e61');box(c,x+i+1+dx,y+h-20,5,5,'#639258');box(c,x+i+dx,y+h-21,3,3,i%2?'#ebbc89':'#e3a5a0');}
     }else if(p.kind==='trellis'){
       box(c,x+3,y+3,3,h-7,'#6b563f');box(c,x+w-4,y+3,3,h-7,'#6b563f');
       for(let yy=y+9;yy<y+h-6;yy+=13){box(c,x+2,yy,w-3,2,'#a38155');box(c,x+4+(yy%2)*3,yy-5,8,6,'#5f8e5a');box(c,x+1,yy+2,7,5,'#7fa268');}
@@ -150,10 +181,10 @@
       box(c,x+7,y-5,2,10,'#6c5640');box(c,x+3,y+5,10,8,'#f9d78c');box(c,x+1,y+11,14,2,'#745b41');
     }
   }
-  function modulePart(c,p,plan){
+  function modulePart(c,p,plan,time=0){
     const [x,y,w,h]=houseRect(p,plan),pal=palettes[plan.layout],asset=p.asset;
     const mapping={footing:'foundation',wall:'wall',floor:'floor',door:'door',window:'window',awning:'awning',planter:'planter',trellis:'trellis',bed:'bed',shelf:'shelf',hearth:'hearth'};
-    if(mapping[asset]){drawPart(c,{...p,kind:mapping[asset]},asset==='wall'&&p.material==='S'?{...plan,layout:'stone'}:plan);return;}
+    if(mapping[asset]){drawPart(c,{...p,kind:mapping[asset]},asset==='wall'&&p.material==='S'?{...plan,layout:'stone'}:plan,time);return;}
     if(asset==='gable'){
       box(c,x,y,w,h,pal.edge);box(c,x+2,y+2,w-4,h-4,pal.inside);box(c,x+2,y+h-5,w-4,3,pal.trim);
     }else if(asset==='roofLeft'||asset==='roofRight'){
@@ -170,7 +201,8 @@
       if(asset==='clock'){box(c,x+w/2,y+6,2,8,'#60493d');box(c,x+w/2,y+12,8,2,'#60493d');}
       else{box(c,x+w/2,y+5,2,h-8,'#6d4d38');box(c,x+4,y+h/2,w-8,2,'#6d4d38');}
     }else if(asset==='banner'||asset==='flag'){
-      box(c,x+2,y,3,h,'#715844');poly(c,[[x+5,y+3],[x+w,y+7],[x+w-3,y+h-4],[x+5,y+h-8]],'#bd7762');
+      const dy=Math.round(Math.sin(time*2+p.x)*2);
+      box(c,x+2,y,3,h,'#715844');poly(c,[[x+5,y+3],[x+w,y+7+dy],[x+w-3,y+h-4+dy],[x+5,y+h-8]],'#bd7762');
     }
   }
   function pet(c,p,index,clock,held,hammer=false,metric=false){
@@ -218,12 +250,73 @@
     if(s.plan?.artStyle==='woodland-v3'&&(preview||s.status==='done'))return [104,144,272,160];
     return s.plan?.artStyle?.startsWith('woodland-')&&(preview||s.status==='done')?[120,136,240,152]:[0,0,480,304];
   }
+  function scenery(c,time,retreat){
+    // A shallow foreground brook leaves the construction floor and stock clear.
+    const bank=x=>293+Math.round(Math.sin(x*.035)*2+Math.sin(x*.09));
+    for(let x=0;x<480;x++){
+      const y=bank(x),depth=4+Math.round(Math.sin(x*.06));
+      box(c,x,y-1,1,depth+2,retreat?'#283b32':'#596e52');
+      box(c,x,y,1,depth,retreat?'#233c3f':'#506f75');
+    }
+    for(let i=0;i<36;i++){
+      const x=i*53%480,y=bank(x);
+      box(c,x,y-2,2+i%3,1,retreat?'#4a5345':'#7c8165');
+      if(i%3===0){box(c,x+1,y-4,1,3,retreat?'#43513b':'#708058');box(c,x+2,y-3,2,1,retreat?'#576047':'#8d9769');}
+    }
+    for(let i=0;i<26;i++){
+      const x=(i*37+time*(7+i%3))%480,y=bank(x)+1+i%2;
+      box(c,x,y,2+i%3,1,retreat?'#415c5b':'#83a5a4');
+    }
+    c.save();
+    for(let i=0;i<6;i++){
+      const phase=(time*.06+i/6)%1,x=-60+phase*600,y=251+i%3*4;
+      c.globalAlpha=Math.sin(phase*Math.PI)*.07;
+      box(c,x,y,36+i%3*12,2,'#b2c9be');box(c,x+12,y-2,23,2,'#b2c9be');
+    }
+    c.globalAlpha=.6;
+    for(let i=0;i<8;i++){
+      const phase=(time*.045+i/8)%1,x=(i*73+time*9+Math.sin(time+i)*3)%480,y=162+phase*104;
+      box(c,x,y,Math.sin(time*2+i)>0?2:3,1,i%2?'#899565':'#a28c59');
+    }
+    c.restore();
+  }
+  function chimneySmoke(c,s,time,preview){
+    if(!s.plan)return;
+    const parts=preview?s.plan.parts:s.installed,seen=new Set();
+    // Smoke needs an installed fireplace as well as the chimney's outlet cell.
+    if(!parts.some(p=>{
+      const source=p.tileSource||p;if((source.kind||source.asset)!=='hearth')return false;
+      if(!p.tileSource)return true;
+      const [x,y,w,h]=houseRect(source,s.plan),[tx,ty]=houseRect(p,s.plan);
+      const fx=x+(source.light?.x??w/2),fy=y+(source.light?.y??h-10);
+      return fx>=tx&&fx<tx+G&&fy>=ty&&fy<ty+G;
+    }))return;
+    for(const p of parts){
+      const source=p.tileSource||p;
+      if(seen.has(source.id))continue;
+      const [x,y,w]=houseRect(source,s.plan);
+      let outlet;
+      if(source.asset==='chimney')outlet=[x+w/2,y];
+      else if(source.kind==='roof'&&s.plan.layout==='stone'&&!s.plan.artStyle)outlet=[x+23,y+5];
+      if(!outlet)continue;
+      if(p.tileSource){const [tx,ty]=houseRect(p,s.plan);if(outlet[0]<tx||outlet[0]>=tx+G||outlet[1]<ty||outlet[1]>=ty+G)continue;}
+      seen.add(source.id);c.save();
+      for(let i=0;i<6;i++){
+        const phase=(time*.22+i/6)%1,drift=phase*phase*12+Math.sin(time*1.5+i)*2,size=3+Math.floor(phase*6);
+        c.globalAlpha=(1-phase)*.23;
+        box(c,outlet[0]+drift-size/2,outlet[1]-phase*30-3,size,size-1,'#b8bfb0');
+      }
+      c.restore();
+    }
+  }
   function drawBase(canvas,s,clock=0,preview=false,world=false){
     const c=canvas.getContext('2d'),[vx,vy,vw,vh]=world?[0,0,480,304]:viewport(s,preview);
     c.imageSmoothingEnabled=false;c.save();c.scale(canvas.width/vw,canvas.height/vh);c.translate(-vx,-vy);
     const environmentPlan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint);
     const retreat=environmentPlan?.artStyle==='woodland-v3';
-    if(!retreat||!root.TownCottageArt?.environment(c))ground(c);
+    const time=preview?0:Math.floor(clock*12)/12;
+    if(!retreat||!root.TownCottageArt?.environment(c))ground(c,time);
+    scenery(c,time,retreat);chimneySmoke(c,s,time,preview);
     if(!preview)stock(c,s);
     const plan=s.plan;if(plan){
       const style=plan.modular?{...plan,layout:plan.recipe.budget.S>plan.recipe.budget.W?'stone':'wood'}:plan;
@@ -235,9 +328,9 @@
       if(!preview&&motion?.visible&&!plan.gridBuild)layers.push({p:s.active.part,progress:1});
       // Legacy in-flight saves also hide their component until the task finishes.
       layers.sort((a,b)=>a.p.layer-b.p.layer||a.p.y-b.p.y);
-      for(const {p,progress}of layers){c.save();if(progress<1){const [x,y,w,h]=houseRect(p,style);c.beginPath();c.rect(x-8,y+h*(1-progress)-7,w+16,h*progress+15);c.clip();}if(plan.modular)modulePart(c,p,style);else drawPart(c,p,style);c.restore();}
+      for(const {p,progress}of layers){c.save();if(progress<1){const [x,y,w,h]=houseRect(p,style);c.beginPath();c.rect(x-8,y+h*(1-progress)-7,w+16,h*progress+15);c.clip();}if(plan.modular)modulePart(c,p,style,time);else drawPart(c,p,style,time);c.restore();}
     }
-    if(!retreat)shrubs(c);
+    if(!retreat)shrubs(c,time);
     if(preview&&s.plan?.artStyle?.startsWith('woodland-')){
       pet(c,{x:230,y:256},0,0,null,false,true);
     }else if(preview&&s.plan?.residential){
@@ -271,7 +364,7 @@
   }
   // A separate transparent pass supplies only installed material to the lighting shader.
   // Reuse the same clipping/layer order so unfinished cells never acquire surface relief.
-  function drawSurface(canvas,s,preview=false,occluders=false){
+  function drawSurface(canvas,s,preview=false,occluders=false,clock=0){
     const c=canvas.getContext('2d');c.clearRect(0,0,canvas.width,canvas.height);
     c.imageSmoothingEnabled=false;
     const plan=s.plan;if(!plan)return;
@@ -279,7 +372,8 @@
     c.save();c.scale(canvas.width/480,canvas.height/304);
     for(const p of [...(preview?plan.parts:s.installed)].sort((a,b)=>a.layer-b.layer||a.y-b.y)){
       if(occluders&&!['foundation','floor','roof','footing','roofLeft','roofRight'].includes(p.asset||p.kind))continue;
-      if(plan.modular)modulePart(c,p,style);else drawPart(c,p,style);
+      const time=preview||occluders?0:Math.floor(clock*12)/12;
+      if(plan.modular)modulePart(c,p,style,time);else drawPart(c,p,style,time);
     }
     c.restore();
   }

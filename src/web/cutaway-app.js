@@ -52,12 +52,13 @@
   };
   $('speed').onchange=()=>{state.speed=Number($('speed').value);update();persist();};
   $('reset').onclick=()=>{state=E.create(42);state.blueprint=plans[selected].id;update();persist();};
-  let previous=performance.now(),acc=0,ui=0;
+  let previous=performance.now(),acc=0,ui=0,sceneryClock=state.time;
   function frame(now){
     const elapsed=Math.min((now-previous)/1000,.1);previous=now;
     if(!document.hidden){clock+=elapsed;acc+=elapsed*state.speed;
       try{while(acc>=1/30){E.advance(state,1/30);acc-=1/30;}}catch(err){state.paused=true;state.message='施工暂停：'+err.message;console.error(err);}
-      R.draw($('scene'),state,clock);
+      if(!state.paused)sceneryClock+=elapsed;
+      R.draw($('scene'),state,sceneryClock);
       ui+=elapsed;if(ui>.14){update();ui=0;}
       if(clock-lastSave>4)persist();
     }requestAnimationFrame(frame);
