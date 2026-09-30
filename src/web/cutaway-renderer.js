@@ -6,6 +6,23 @@
   function box(c,x,y,w,h,color){c.fillStyle=color;c.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));}
   function poly(c,points,color){c.fillStyle=color;c.beginPath();points.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();c.fill();}
   function houseRect(p,plan){return [(plan.modular?root.TownModules.origin(plan):O)+p.x*G,Y-(p.y+p.h)*G,p.w*G,p.h*G];}
+  function visualLayer(p,plan){
+    const kind=(p.tileSource||p).kind;
+    return plan.artStyle==='creek-v2'&&kind==='flue'?10:p.layer;
+  }
+  function foregroundStones(c,s,preview,clock=0){
+    const plan=s.plan;if(plan?.artStyle!=='creek-v2')return;
+    const parts=preview?plan.parts:s.installed;
+    // A shallow foreground lip joins only installed footing/floor pairs.
+    // It occupies the bottom four pixels of that floor, not an unbuilt tile.
+    for(const p of parts.filter(p=>(p.tileSource||p).kind==='foundation')){
+      const floor=parts.some(f=>(f.tileSource||f).kind==='earth'&&f.x===p.x&&f.y===p.y+1);
+      if(!floor){drawPart(c,p,plan,clock);continue;}
+      const [x,y,w]=houseRect(p,plan);
+      c.save();c.beginPath();c.rect(x,y-4,w,20);c.clip();c.translate(0,-4);
+      drawPart(c,p,plan,clock);c.restore();
+    }
+  }
   function tree(c,x,y,scale=1,time=0){
     c.save();c.translate(x,y);c.scale(scale,scale);
     box(c,-7,-83,15,83,'#5c604b');box(c,-4,-80,5,77,'#967b59');
@@ -332,8 +349,9 @@
       const motion=s.active?.motion===root.TownCutawayMotion?.VERSION?root.TownCutawayMotion.sample(s.active):null;
       if(!preview&&motion?.visible&&!plan.gridBuild)layers.push({p:s.active.part,progress:1});
       // Legacy in-flight saves also hide their component until the task finishes.
-      layers.sort((a,b)=>a.p.layer-b.p.layer||a.p.y-b.p.y);
-      for(const {p,progress}of layers){c.save();if(progress<1){const [x,y,w,h]=houseRect(p,style);c.beginPath();c.rect(x-8,y+h*(1-progress)-7,w+16,h*progress+15);c.clip();}if(plan.modular)modulePart(c,p,style,time);else drawPart(c,p,style,time);c.restore();}
+      layers.sort((a,b)=>visualLayer(a.p,plan)-visualLayer(b.p,plan)||a.p.y-b.p.y);
+      for(const {p,progress}of layers){if(plan.artStyle==='creek-v2'&&(p.tileSource||p).kind==='foundation')continue;c.save();if(progress<1){const [x,y,w,h]=houseRect(p,style);c.beginPath();c.rect(x-8,y+h*(1-progress)-7,w+16,h*progress+15);c.clip();}if(plan.modular)modulePart(c,p,style,time);else drawPart(c,p,style,time);c.restore();}
+      foregroundStones(c,s,preview,time);
     }
     if(!retreat&&!wilderness)shrubs(c,time);
     if(wilderness&&!preview)root.TownWildernessArt.gatherOverlay(c,s,time);
@@ -380,8 +398,9 @@
     const plan=s.plan;if(!plan)return;
     const style=plan.modular?{...plan,layout:plan.recipe.budget.S>plan.recipe.budget.W?'stone':'wood'}:plan;
     c.save();c.scale(canvas.width/480,canvas.height/304);
-    for(const p of [...(preview?plan.parts:s.installed)].sort((a,b)=>a.layer-b.layer||a.y-b.y)){
+    for(const p of [...(preview?plan.parts:s.installed)].sort((a,b)=>visualLayer(a,plan)-visualLayer(b,plan)||a.y-b.y)){
       const source=p.tileSource||p;
+      if(plan.artStyle==='creek-v2'&&source.kind==='foundation')continue;
       if(occluders&&(source.kind==='wall'||source.asset==='wall')){
         const [x,y,w,h]=houseRect(source,style);
         c.save();
@@ -396,6 +415,7 @@
       const time=preview||occluders?0:Math.floor(clock*12)/12;
       if(plan.modular)modulePart(c,p,style,time);else drawPart(c,p,style,time);
     }
+    foregroundStones(c,s,preview,clock);
     c.restore();
   }
   function draw(canvas,s,clock=0,preview=false,camera=null){

@@ -2,7 +2,7 @@
 (function(root){
   'use strict';
   const images={},api={draw,environment,gatherOverlay,revision:0};
-  const sources={...root.TownWildernessAssets,...Object.fromEntries(Object.entries(root.TownWildernessAssetsV2||{}).map(([k,v])=>['v2-'+k,v]))};
+  const sources={...root.TownWildernessAssets,...Object.fromEntries(Object.entries({...root.TownWildernessAssetsV2,...root.TownWildernessAssetsV4}).map(([k,v])=>['v2-'+k,v]))};
   api.ready=Promise.all(Object.entries(sources).map(([key,url])=>new Promise(resolve=>{
     const image=new Image();image.onload=()=>{images[key]=image;api.revision++;resolve(true);};
     image.onerror=()=>resolve(false);image.src=url;
@@ -37,8 +37,11 @@
         if(i%11===0)box(c,x+i,yy+1,3,1,'#96754b');
       }
     }else if(p.kind==='chinking'){
-      c.save();c.globalAlpha=.25;
-      for(let row=7;row<h-3;row+=7)box(c,x+7,y+row,w-14,.5,'#9b7950');c.restore();
+      // Clay follows irregular bark seams rather than drawing ruler-straight rows.
+      c.save();c.globalAlpha=.18;
+      for(let row=7;row<h-3;row+=7)for(let col=9;col<w-9;col+=7){
+        box(c,x+col,y+row+Math.round(Math.sin(col*.23+row)),3,1,'#8d6b45');
+      }c.restore();
     }else if(p.kind==='flue'){
       const image=images['v2-flue'];
       if(image){
