@@ -52,10 +52,15 @@
       sprite('hearth',x+2,y+8,w-4,h-8);
       c.save();c.globalAlpha=.22+.14*Math.sin(time*6.5);
       box(c,x+w/2-2,y+h-10,4,2,'#e5a84d');c.restore();
-    }else if(p.kind==='bed')sprite('bed',x+5,y,w-5,h);
+    }else if(p.kind==='bed'){
+      // Three construction cells include the wall clearance and aisle; the
+      // visible sleeping surface is 32 units (2 m), never the whole footprint.
+      if(w===48)sprite('bed',x+7,y,32,h);
+      else sprite('bed',x+5,y,w-5,h);
+    }
     else if(p.kind==='bedding'){
       c.save();c.globalAlpha=.35;
-      for(let i=6;i<w-3;i+=5)box(c,x+i,y+8+(i%3)/2,2,.5,'#c29e55');c.restore();
+      for(let i=w===48?8:6;i<(w===48?38:w-3);i+=5)box(c,x+i,y+8+(i%3)/2,2,.5,'#c29e55');c.restore();
     }else if(p.kind==='roof-seal'){
       for(let i=1;i<4;i++)box(c,x+12+i*19,y+10+i%2,3,1,'#735036');
     }else sprite(p.kind);

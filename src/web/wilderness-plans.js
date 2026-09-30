@@ -1,7 +1,7 @@
 /* Independent, versioned wilderness site. Existing blueprints are untouched. */
 (function(root){
   'use strict';
-  function build(latest=false){
+  function build(latest=false,fullBed=false){
   const parts=[],costs={W:0,S:0,C:0,B:0,D:0},groups=new Map();
   function add(id,kind,x,y,w,h,material,deps,layer,label,extra={}){
     // Put the finished dirt floor on the actual walkable ground; footing is buried below it.
@@ -25,21 +25,21 @@
   add('window','window',4,2,1,1,'W',['logs'],4,'安装小木窗',
     {light:{x:8,y:8,radius:34,strength:.12,color:[.4,.62,.8]}});
   if(latest)add('tools','tools',5,2,1,1,'W',['logs'],5,'挂好工具与干草束');
-  add('bed','bed',3,1,2,1,'W',['earth','logs'],5,'搭起铺草睡台');
-  add('bedding','bedding',3,1,2,1,'B',['bed'],6,'铺好干草与枝垫');
+  add('bed','bed',3,1,fullBed?3:2,1,'W',['earth','logs'],5,'搭起铺草睡台');
+  add('bedding','bedding',3,1,fullBed?3:2,1,'B',['bed'],6,'铺好干草与枝垫');
   add('hearth','hearth',6,1,latest?2:1,2,'S',['base','earth','logs'],6,'砌筑小石炉',
     {light:{x:latest?16:8,y:24,radius:72,strength:latest?.48:.62,color:[1,.56,.25]}});
   add('flue','flue',6,3,latest?2:1,latest?3:4,'S',['hearth'],7,'接通垂直石烟道');
   add('roof','roof',2,latest?3:4,latest?7:6,2,'B',['logs','gable','chinking','flue'],8,'编枝搭接树皮屋顶');
   add('roof-seal','roof-seal',2,latest?3:4,latest?7:6,1,'D',['roof'],9,'抹泥封住屋顶接缝');
-  const id=latest?'cutaway-creek-shelter-v2-grid-v1':'cutaway-creek-shelter-v1-grid-v1';
-  const plan={id,sourcePlanId:latest?'cutaway-creek-shelter-v2':'cutaway-creek-shelter-v1',name:'溪谷石木小屋',
+  const id=fullBed?'cutaway-creek-shelter-v3-grid-v1':latest?'cutaway-creek-shelter-v2-grid-v1':'cutaway-creek-shelter-v1-grid-v1';
+  const plan={id,sourcePlanId:fullBed?'cutaway-creek-shelter-v3':latest?'cutaway-creek-shelter-v2':'cutaway-creek-shelter-v1',name:'溪谷石木小屋',
     description:'荒野庇护所 · 就地取材 · 石炉与铺草睡台',template:true,cutaway:true,
     gridBuild:true,residential:true,wilderness:true,artStyle:latest?'creek-v2':'creek-v1',layout:'wood',
     pixelsPerMeter:16,petHeightMeters:1,spaces:1,parts,costs,signature:id,silhouette:id};
   return plan;
   }
-  const current=build(true),legacy=build(false);
+  const current=build(true,true),v2=build(true),legacy=build(false);
   if(typeof module!=='undefined'&&module.exports)module.exports=current;
-  else root.TownBlueprints.push(current,legacy);
+  else root.TownBlueprints.push(current,v2,legacy);
 })(globalThis);

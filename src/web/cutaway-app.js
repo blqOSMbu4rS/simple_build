@@ -1,8 +1,8 @@
 (function(){
   'use strict';
   const E=TownEngine,R=TownCutawayRenderer,$=id=>document.getElementById(id),KEY='desktop-build-cutaway-study-v1';
-  const plans=E.BLUEPRINTS.filter(p=>p.residential&&p.gridBuild&&!['cutaway-window-cottage-v1','cutaway-window-cottage-v2','cutaway-creek-shelter-v1'].includes(p.sourcePlanId));let state=E.create(42),selected=0,clock=0,lastSave=0;
-  try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||p.sourcePlanId===data.selected||(String(data.selected).startsWith('cutaway-creek-shelter-v1')&&p.sourcePlanId==='cutaway-creek-shelter-v2')));if(state.status==='building'||state.status==='finishing')state.paused=true;}}
+  const plans=E.BLUEPRINTS.filter(p=>p.residential&&p.gridBuild&&!['cutaway-window-cottage-v1','cutaway-window-cottage-v2','cutaway-creek-shelter-v1','cutaway-creek-shelter-v2'].includes(p.sourcePlanId));let state=E.create(42),selected=0,clock=0,lastSave=0;
+  try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||p.sourcePlanId===data.selected||(/^cutaway-creek-shelter-v[12]/.test(String(data.selected))&&p.sourcePlanId==='cutaway-creek-shelter-v3')));if(state.status==='building'||state.status==='finishing')state.paused=true;}}
   catch(err){console.warn('2D study restore:',err);state=E.create(42);}
   if(state.status==='idle')state.blueprint=plans[selected].id;
   function persist(){try{localStorage.setItem(KEY,JSON.stringify({selected:plans[selected].id,state:E.save(state)}));lastSave=clock;}catch(err){$('status').textContent='自动保存不可用';console.warn(err);}}
