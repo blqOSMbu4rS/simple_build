@@ -75,7 +75,7 @@
       c.restore();return;
     }
     const [x,y,w,h]=houseRect(p,plan),pal=palettes[plan.layout];
-    if(plan.wilderness&&root.TownWildernessArt){root.TownWildernessArt.draw(c,p,x,y,w,h,time);return;}
+    if(plan.wilderness&&root.TownWildernessArt){root.TownWildernessArt.draw(c,p,x,y,w,h,time,plan);return;}
     if(plan.artStyle?.startsWith('woodland-')&&root.TownCottageArt){
       if(time&&typeof document!=='undefined'&&['plant','curtains','ivy'].includes(p.kind))movingCottagePart(c,p,x,y,w,h,time);
       else root.TownCottageArt.draw(c,p,x,y,w,h);
@@ -380,6 +380,17 @@
     const style=plan.modular?{...plan,layout:plan.recipe.budget.S>plan.recipe.budget.W?'stone':'wood'}:plan;
     c.save();c.scale(canvas.width/480,canvas.height/304);
     for(const p of [...(preview?plan.parts:s.installed)].sort((a,b)=>a.layer-b.layer||a.y-b.y)){
+      const source=p.tileSource||p;
+      if(occluders&&(source.kind==='wall'||source.asset==='wall')){
+        const [x,y,w,h]=houseRect(source,style);
+        c.save();
+        if(p.tileSource){const [tx,ty]=houseRect(p,style);c.beginPath();c.rect(tx,ty,16,16);c.clip();}
+        // Back walls receive light; only the installed side cross-sections block it.
+        c.fillStyle='#000';const thickness=plan.artStyle==='creek-v2'?7:4;
+        c.fillRect(x,y,thickness,source.openLeft?Math.max(0,h-32):h);
+        c.fillRect(x+w-thickness,y,thickness,source.openRight?Math.max(0,h-32):h);
+        c.restore();continue;
+      }
       if(occluders&&!['foundation','floor','roof','footing','roofLeft','roofRight'].includes(p.asset||p.kind))continue;
       const time=preview||occluders?0:Math.floor(clock*12)/12;
       if(plan.modular)modulePart(c,p,style,time);else drawPart(c,p,style,time);

@@ -1,8 +1,8 @@
 (function(){
   'use strict';
   const E=TownEngine,R=TownCutawayRenderer,$=id=>document.getElementById(id),KEY='desktop-build-cutaway-study-v1';
-  const plans=E.BLUEPRINTS.filter(p=>p.residential&&p.gridBuild&&!['cutaway-window-cottage-v1','cutaway-window-cottage-v2'].includes(p.sourcePlanId));let state=E.create(42),selected=0,clock=0,lastSave=0;
-  try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||p.sourcePlanId===data.selected));if(state.status==='building'||state.status==='finishing')state.paused=true;}}
+  const plans=E.BLUEPRINTS.filter(p=>p.residential&&p.gridBuild&&!['cutaway-window-cottage-v1','cutaway-window-cottage-v2','cutaway-creek-shelter-v1'].includes(p.sourcePlanId));let state=E.create(42),selected=0,clock=0,lastSave=0;
+  try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||p.sourcePlanId===data.selected||(String(data.selected).startsWith('cutaway-creek-shelter-v1')&&p.sourcePlanId==='cutaway-creek-shelter-v2')));if(state.status==='building'||state.status==='finishing')state.paused=true;}}
   catch(err){console.warn('2D study restore:',err);state=E.create(42);}
   if(state.status==='idle')state.blueprint=plans[selected].id;
   function persist(){try{localStorage.setItem(KEY,JSON.stringify({selected:plans[selected].id,state:E.save(state)}));lastSave=clock;}catch(err){$('status').textContent='自动保存不可用';console.warn(err);}}
@@ -16,7 +16,7 @@
     $('message').textContent=action?(state.paused?'已暂停 · ':'')+actionLabels[action.phase]+' · '+state.active.part.label+' · 已送达 '+action.delivered+'/'+state.active.materialIds.length:state.message;
     $('cost').textContent='总用料 '+Object.entries(plan.costs).filter(([,n])=>n).map(([k,n])=>`${E.LABELS[k]} ${n}`).join(' · ')+(state.missing?' · 当前缺 '+Object.entries(state.missing.amounts).map(([k,n])=>`${E.LABELS[k]} ${n}`).join('、'):'');
     for(const k of E.MATERIAL_KINDS)$('stock-'+k).textContent=inv.free[k]+inv.reserved[k];
-    $('play').textContent=state.status==='done'?'下一块空地 →':state.paused?'继续建造 ▶':state.status==='building'||state.status==='finishing'?'暂停 Ⅱ':state.status==='waiting'?'等待材料 · 继续':'开始建造 ▶';
+    $('play').textContent=state.status==='done'?'下一块空地 →':state.paused?'继续建造 ▶':state.status==='building'||state.status==='finishing'?'暂停 Ⅱ':state.status==='waiting'?(state.plan?.wilderness?'暂停采集 Ⅱ':'等待材料 · 继续'):'开始建造 ▶';
     $('speed').value=String(state.speed);
     const wild=!!plan.wilderness,g=state.wilderness,pose=TownWildGather.sample(g);
     document.querySelectorAll('[data-material]').forEach(b=>{b.hidden=wild||['B','D'].includes(b.dataset.material);});
@@ -63,7 +63,7 @@
   $('play').onclick=()=>{
     if(state.status==='done'){E.next(state);state.blueprint=plans[selected].id;}
     else if(state.status==='building'||state.status==='finishing')state.paused=!state.paused;
-    else if(state.status==='waiting'){state.paused=false;}
+    else if(state.status==='waiting'){state.paused=state.plan?.wilderness?!state.paused:false;}
     else{state.blueprint=plans[selected].id;E.start(state);}
     update();persist();
   };

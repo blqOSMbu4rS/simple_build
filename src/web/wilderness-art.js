@@ -2,7 +2,8 @@
 (function(root){
   'use strict';
   const images={},api={draw,environment,gatherOverlay,revision:0};
-  api.ready=Promise.all(Object.entries(root.TownWildernessAssets||{}).map(([key,url])=>new Promise(resolve=>{
+  const sources={...root.TownWildernessAssets,...Object.fromEntries(Object.entries(root.TownWildernessAssetsV2||{}).map(([k,v])=>['v2-'+k,v]))};
+  api.ready=Promise.all(Object.entries(sources).map(([key,url])=>new Promise(resolve=>{
     const image=new Image();image.onload=()=>{images[key]=image;api.revision++;resolve(true);};
     image.onerror=()=>resolve(false);image.src=url;
   })));
@@ -18,7 +19,49 @@
     }
     c.restore();
   }
-  function draw(c,p,x,y,w,h,time=0){
+  function drawV2(c,p,x,y,w,h,time){
+    const sprite=(name,xx=x,yy=y,ww=w,hh=h)=>{const image=images['v2-'+name];if(image)c.drawImage(image,xx,yy,ww,hh);};
+    if(p.kind==='wall'){
+      sprite('back');sprite('side',x,y,7,h);sprite('side',x+w-7,y,7,h);
+      // Subtle interior shade gives furniture separation without erasing grain.
+      c.fillStyle='#251b1230';c.fillRect(x+7,y,w-14,h);
+    }else if(p.kind==='gable'){
+      c.save();c.beginPath();c.moveTo(x,y+h);c.lineTo(x+w/2,y+14);c.lineTo(x+w,y+h);c.closePath();c.clip();sprite('back');c.restore();
+    }else if(p.kind==='foundation'){
+      // Only a shallow irregular line of river stones, with no solid pedestal.
+      for(let i=0;i<w;i+=22)sprite('foundation',x+i,y-1+(i%3)/2,Math.min(24,w-i),8);
+    }else if(p.kind==='earth'){
+      for(let i=0;i<w;i++){
+        const yy=y+12+Math.round(Math.sin(i*.5)+Math.sin(i*.17));
+        box(c,x+i,yy,1,h-(yy-y),'#795a3a');
+        if(i%11===0)box(c,x+i,yy+1,3,1,'#96754b');
+      }
+    }else if(p.kind==='chinking'){
+      c.save();c.globalAlpha=.25;
+      for(let row=7;row<h-3;row+=7)box(c,x+7,y+row,w-14,.5,'#9b7950');c.restore();
+    }else if(p.kind==='flue'){
+      const image=images['v2-flue'];
+      if(image){
+        // Keep the cap's proportions; extend only the stone shaft texture.
+        const cx=x+w/2-6;
+        for(let row=6;row<h;row+=8)c.drawImage(image,24,96,80,56,cx,y+row,12,Math.min(8,h-row));
+        c.drawImage(image,14,32,100,40,x+w/2-8,y,16,6);
+      }
+    }else if(p.kind==='hearth'){
+      // Kettle, arch, firebox and embers are all visible in the actual sprite.
+      sprite('hearth',x+2,y+8,w-4,h-8);
+      c.save();c.globalAlpha=.22+.14*Math.sin(time*6.5);
+      box(c,x+w/2-2,y+h-10,4,2,'#e5a84d');c.restore();
+    }else if(p.kind==='bed')sprite('bed',x+5,y,w-5,h);
+    else if(p.kind==='bedding'){
+      c.save();c.globalAlpha=.35;
+      for(let i=6;i<w-3;i+=5)box(c,x+i,y+8+(i%3)/2,2,.5,'#c29e55');c.restore();
+    }else if(p.kind==='roof-seal'){
+      for(let i=1;i<4;i++)box(c,x+12+i*19,y+10+i%2,3,1,'#735036');
+    }else sprite(p.kind);
+  }
+  function draw(c,p,x,y,w,h,time=0,plan){
+    if(plan?.artStyle==='creek-v2'){drawV2(c,p,x,y,w,h,time);return;}
     const kind=p.kind;
     if(kind==='wall'){
       if(images.wall)c.drawImage(images.wall,x,y,w,h);else box(c,x,y,w,h,'#735039');
@@ -61,7 +104,12 @@
     }else box(c,x+2,y+4,w-4,h-5,'#73543a');
   }
   function environment(c,s,time=0){
-    if(images.environment){
+    const latest=(s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint))?.artStyle==='creek-v2';
+    if(latest&&images['v2-environment']){
+      // The empty yard is aligned with the same fixed simulation floor.
+      c.drawImage(images['v2-environment'],0,0,1920,650,0,0,480,272);
+      c.drawImage(images['v2-environment'],0,650,1920,310,0,272,480,32);
+    }else if(images.environment){
       // Generated ground lip is row 446; align walkable ground with simulation.
       c.drawImage(images.environment,0,0,960,446,0,0,480,272);
       c.drawImage(images.environment,0,446,960,194,0,272,480,32);
