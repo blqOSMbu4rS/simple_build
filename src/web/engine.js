@@ -5,10 +5,11 @@
   const MOT=typeof module!=='undefined'&&module.exports?require('./cutaway-motion.js'):root.TownCutawayMotion;
   const ART=typeof module!=='undefined'&&module.exports?require('./art-layout.js'):root.TownArtLayout;
   const BLUEPRINTS=typeof module!=='undefined'&&module.exports?require('./blueprints.js'):root.TownBlueprints;
-  const KINDS = ['W', 'S', 'C'];
-  const LABELS = { W: '木材', S: '石材', C: '布料' };
+  const GATHER=typeof module!=='undefined'&&module.exports?require('./wilderness-gather.js'):root.TownWildGather;
+  const KINDS = ['W', 'S', 'C'], MATERIAL_KINDS=[...KINDS,'B','D'];
+  const LABELS = { W: '木材', S: '石材', C: '布料', B: '树枝 / 干草', D: '泥土' };
   const GRID = 16, GROUND = 272, ORIGIN = 240;
-  const count = () => ({ W: 0, S: 0, C: 0 });
+  const count = () => ({ W: 0, S: 0, C: 0, B: 0, D: 0 });
   const clone = value => JSON.parse(JSON.stringify(value));
   function hash(text) { let h = 2166136261; for (const c of String(text)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; }
   function fingerprint(c) { return JSON.stringify([c.id,c.kind,c.x,c.y,c.w,c.h,c.material,c.cost,c.shape]); }
@@ -57,7 +58,7 @@
     if(right)side('right',5,right);
     const silhouette=[upper?'two':'one',roof,[left,right].filter(Boolean).sort().join('+')].join(':');
     const id=[frame,wall,roof,+upper,left||'-',right||'-'].join('_');
-    const costs=count(); for(const p of parts)for(const k of KINDS)costs[k]+=p.cost[k]||0;
+    const costs={W:0,S:0,C:0}; for(const p of parts)for(const k of KINDS)costs[k]+=p.cost[k]||0;
     const mainName=upper?(frame==='S'?'石下木上小屋':'双层木屋'):frame==='S'?(wall==='W'?'石基木墙小屋':'石砌小屋'):'林间木屋';
     return {id,frame,wall,roof,upper,left,right,parts,costs,silhouette,signature:silhouette+':'+frame+':'+wall,
       name:mainName+(roof==='C'?' · 布篷顶':'')+(left||right?' · 带侧棚':''),spaces:1+Number(upper)+Number(!!left)+Number(!!right)};
@@ -75,7 +76,7 @@
     const total=plan.parts.reduce((n,c)=>n+c.seconds,0);
     const C=plan.parts.filter(c=>installed.has(c.id)).reduce((n,c)=>n+c.seconds,0)/total;
     const recent=s.batches.slice(-3).reverse(); let sum=0,weights=0;
-    for(const k of KINDS) {
+    for(const k of MATERIAL_KINDS) {
       const index=recent.findIndex(b=>b.kind===k); if(index<0)continue;
       const I=s.materials.filter(m=>m.kind===k&&recent.some(b=>b.id===m.batch)&&['free','soft'].includes(m.state)).length;
       if(!I)continue;
@@ -93,8 +94,8 @@
     const fixed=[...s.installed.filter(p=>p.required),...(s.active&&s.active.part.required?[s.active.part]:[])];
     if(fixed.some(p=>!plan.parts.some(c=>fingerprint(c)===fingerprint(p))))return false;
     const ids=new Set(fixed.map(p=>p.id)), remaining=count();
-    for(const c of plan.parts)if(!ids.has(c.id))for(const k of KINDS)remaining[k]+=c.cost[k]||0;
-    const budget=available(s); return KINDS.every(k=>remaining[k]<=budget[k]);
+    for(const c of plan.parts)if(!ids.has(c.id))for(const k of MATERIAL_KINDS)remaining[k]+=c.cost[k]||0;
+    const budget=available(s); return MATERIAL_KINDS.every(k=>remaining[k]<=budget[k]);
   }
   function choose(s) {
     const candidates=CATALOG.filter(p=>feasible(p,s)).map(plan=>({plan,score:score(plan,s)}));
@@ -114,7 +115,7 @@
   }
   function note(s,text) { s.message=text; s.log.unshift({time:s.time,text});s.log=s.log.slice(0,8); }
   function addMaterials(s,kind,units) {
-    if(!KINDS.includes(kind)||!Number.isInteger(units)||units<1||units>100)return false;
+    if(!MATERIAL_KINDS.includes(kind)||!Number.isInteger(units)||units<1||units>100)return false;
     if(s.materials.filter(m=>m.kind===kind&&m.state!=='installed').length+units>240) {note(s,'这类材料已经堆满了，先让小伙伴用掉一些吧。');return false;}
     const batch=s.nextBatch++;s.batches.push({id:batch,kind,units});s.batches=s.batches.slice(-12);
     for(let i=0;i<units;i++)s.materials.push({id:s.nextMaterial++,kind,batch,state:'free',owner:null,building:null});
@@ -125,7 +126,7 @@
     // Build the complete next allocation before changing the old ledger.
     const pool=s.materials.filter(m=>['free','soft'].includes(m.state));
     const fixed=new Set([...s.installed.map(c=>c.id),...(s.active?[s.active.id]:[])]), assignment=new Map();
-    for(const c of plan.parts)if(!fixed.has(c.id))for(const k of KINDS) {
+    for(const c of plan.parts)if(!fixed.has(c.id))for(const k of MATERIAL_KINDS) {
       const need=c.cost[k]||0, stock=pool.filter(m=>m.kind===k&&!assignment.has(m.id)).slice(0,need);
       if(stock.length!==need)return false; for(const m of stock)assignment.set(m.id,c.id);
     }
@@ -142,13 +143,13 @@
     s.lastScore=selected.score;s.status='building';
     if(changed)note(s,'新材料有了新用处：保留已建部分，调整后面的施工。');
   }
-  function preview(s){return s.plan||MOD.generate(hash(s.seed+':'+s.building),available(s),s.layoutChoice||0);}
+  function preview(s){return s.plan||MOD.generate(hash(s.seed+':'+s.building),Object.fromEntries(KINDS.map(k=>[k,available(s)[k]])),s.layoutChoice||0);}
   function shuffle(s){if(s.status!=='idle')return false;s.blueprint='modular';s.layoutChoice=((s.layoutChoice||0)+1)%1000000;return true;}
   function canonical(plan){return plan?.modular?MOD.canonical(plan):ALL_PLANS.find(p=>p.id===plan?.id);}
   function start(s) {
     if(s.status!=='idle'&&s.status!=='waiting')return false;
     if(!s.plan&&s.blueprint==='modular'){s.plan=preview(s);s.status='building';s.paused=false;s.startedAt=s.time;s.dirty=false;note(s,'构件组合已确定，开始逐件搭建；缺料时会等你补齐。');return true;}
-    if(!s.plan&&s.blueprint){s.plan=clone(BLUEPRINTS.find(p=>p.id===s.blueprint)||BLUEPRINTS[0]);s.status='building';s.paused=false;s.startedAt=s.time;s.dirty=false;note(s,'按图纸开工：缺少材料时会停下来等你。');return true;}
+    if(!s.plan&&s.blueprint){s.plan=clone(BLUEPRINTS.find(p=>p.id===s.blueprint)||BLUEPRINTS[0]);GATHER?.create(s);s.status='building';s.paused=false;s.startedAt=s.time;s.dirty=false;note(s,'按图纸开工：缺少材料时会停下来等你。');return true;}
     s.status='waiting';s.paused=false;s.startedAt=s.time;replan(s);
     if(s.plan)note(s,'开工啦！先整理材料，慢慢打好地基。');return !!s.plan;
   }
@@ -158,19 +159,19 @@
   function beginTask(s,c) {
     if(s.plan.template){
       const budget=available(s),missing={};
-      for(const k of KINDS)if((c.cost[k]||0)>budget[k])missing[k]=c.cost[k]-budget[k];
+      for(const k of MATERIAL_KINDS)if((c.cost[k]||0)>budget[k])missing[k]=c.cost[k]-budget[k];
       if(Object.keys(missing).length){s.status='waiting';s.missing={module:c.id,label:taskLabel(c),cost:c.cost,amounts:missing};note(s,`等待材料：${taskLabel(c)}还缺 `+Object.entries(missing).map(([k,n])=>`${LABELS[k]} ${n} 份`).join('、')+'。补齐后自动继续。');return;}
       const assigned=[];
-      for(const k of KINDS)assigned.push(...s.materials.filter(m=>m.state==='free'&&m.kind===k).slice(0,c.cost[k]||0));
+      for(const k of MATERIAL_KINDS)assigned.push(...s.materials.filter(m=>m.state==='free'&&m.kind===k).slice(0,c.cost[k]||0));
       for(const m of assigned){m.state='soft';m.owner=c.id;m.building=s.building;}
       s.missing=null;
     }
     const stock=s.materials.filter(m=>m.state==='soft'&&m.owner===c.id&&m.building===s.building);
-    if(KINDS.some(k=>stock.filter(m=>m.kind===k).length!==(c.cost[k]||0)))throw Error('Missing reserved material');
+    if(MATERIAL_KINDS.some(k=>stock.filter(m=>m.kind===k).length!==(c.cost[k]||0)))throw Error('Missing reserved material');
     for(const m of stock)m.state='hard'; // Dedicated shaping begins at claim: irreversible and atomic.
     if(s.plan.cutaway){
       const target={x:ORIGIN+(c.x+c.w/2)*GRID-12,y:Math.min(GROUND,GROUND-c.y*GRID)};
-      s.active=MOT.create(c,stock,s.pets,hash(c.id)%2,target);
+      s.active=MOT.create(c,stock,s.pets,s.plan.wilderness?0:hash(c.id)%2,target);
       note(s,taskLabel(c)+(s.plan.gridBuild?' · 搬一块，建一格':' · 每次搬一块，搬齐后敲打建造'));return;
     }
     const target=(s.plan.modular?MOD.workPoint(s.plan,c):ART.workPoint(s.plan,c.id))||{x:ORIGIN+(c.x+c.w/2)*GRID,y:Math.min(GROUND,GROUND-c.y*GRID)};
@@ -201,6 +202,7 @@
   function advance(s,dt=1/30) {
     if(s.paused||!['building','waiting','finishing'].includes(s.status))return;
     s.time+=dt;
+    GATHER?.advance(s,dt,api);
     if(s.dirty)replan(s);
     if(s.active) {
       const a=s.active;a.elapsed+=dt;
@@ -242,11 +244,12 @@
     }
     if(list.some(c=>!done.has(c.id)))throw Error('Construction dependency deadlock');
     if(s.status==='building') {replan(s);if(s.plan.parts.some(c=>!done.has(c.id)))return;finishPlan(s);}
-    else {s.status='done';s.completedAt=s.time;s.pets=[{x:ORIGIN+32,y:GROUND-16},{x:ORIGIN+55,y:GROUND-16}];note(s,'小屋完工啦。坐一会儿，再去下一块空地吧。');}
+    else {s.status='done';s.completedAt=s.time;s.pets=s.plan.wilderness?[{x:280,y:GROUND},{x:328,y:GROUND}]:[{x:ORIGIN+32,y:GROUND-16},{x:ORIGIN+55,y:GROUND-16}];note(s,'小屋完工啦。坐一会儿，再去下一块空地吧。');}
   }
   function next(s) {
     if(s.status!=='done')return false;
     s.history.push({number:s.building,plan:clone(s.plan),parts:clone(s.installed)});
+    delete s.wilderness;
     s.building++;s.plan=null;s.installed=[];s.active=null;s.decorations=[];s.status='idle';s.decision=0;s.roofChecked=false;s.completedAt=null;s.paused=false;s.dirty=false;s.missing=null;s.blueprint='modular';s.layoutChoice=0;
     s.pets=[{x:170,y:GROUND},{x:194,y:GROUND}];note(s,'余料已经带来了，新的一间会是什么样呢？');return true;
   }
@@ -260,7 +263,7 @@
     if(!['idle','waiting','building','finishing','done'].includes(s.status)||![1,10,30].includes(s.speed)||typeof s.paused!=='boolean')throw Error('存档状态无效');
     if(!Array.isArray(s.installed)||!Array.isArray(s.history)||!Array.isArray(s.batches)||!Array.isArray(s.decorations)||!Array.isArray(s.pets)||s.pets.length!==2)throw Error('存档结构无效');
     if(s.layoutChoice!==undefined&&(!Number.isInteger(s.layoutChoice)||s.layoutChoice<0||s.layoutChoice>=1000000))throw Error('组合编号损坏');
-    const ids=new Set();for(const m of s.materials){if(!Number.isInteger(m.id)||ids.has(m.id)||!KINDS.includes(m.kind)||!['free','soft','hard','installed'].includes(m.state))throw Error('材料账本损坏');ids.add(m.id);}
+    const ids=new Set();for(const m of s.materials){if(!Number.isInteger(m.id)||ids.has(m.id)||!MATERIAL_KINDS.includes(m.kind)||!['free','soft','hard','installed'].includes(m.state))throw Error('材料账本损坏');ids.add(m.id);}
     if(!Number.isInteger(s.nextMaterial)||s.materials.some(m=>m.id>=s.nextMaterial))throw Error('材料编号损坏');
     if(s.plan) {
       const definition=canonical(s.plan);if(!definition||JSON.stringify(definition)!==JSON.stringify(s.plan))throw Error('建筑方案损坏');
@@ -284,14 +287,14 @@
       if(!a.part.deps.every(id=>currentIds.has(id)))throw Error('施工前置缺失');
       for(const pos of [a.target,a.supply,...a.starts])if(!pos||!Number.isFinite(pos.x)||!Number.isFinite(pos.y)||pos.x<0||pos.x>480||pos.y<0||pos.y>GROUND)throw Error('施工路径损坏');
     }
-    if(new Set(s.decorations.map(c=>c.id)).size!==s.decorations.length||s.decorations.length>3||s.decorations.some(c=>!['decor-sign','decor-step','decor-banner'].includes(c.id)||c.required!==false||!KINDS.includes(c.material)||c.cost[c.material]!==1||c.seconds!==4||c.workers!==1||![c.x,c.y,c.w,c.h].every(Number.isInteger)))throw Error('装饰定义损坏');
+    if(new Set(s.decorations.map(c=>c.id)).size!==s.decorations.length||s.decorations.length>3||s.decorations.some(c=>!['decor-sign','decor-step','decor-banner'].includes(c.id)||c.required!==false||!MATERIAL_KINDS.includes(c.material)||c.cost[c.material]!==1||c.seconds!==4||c.workers!==1||![c.x,c.y,c.w,c.h].every(Number.isInteger)))throw Error('装饰定义损坏');
     for(const m of s.materials) {
       if(m.state==='hard'&&!activeIds.has(m.id))throw Error('材料任务归属损坏');
       if(m.state!=='free'&&m.building===s.building&&!definitions.some(c=>c.id===m.owner))throw Error('材料引用损坏');
     }
     for(const c of definitions) {
       const expected=currentIds.has(c.id)?'installed':s.active?.id===c.id?'hard':'soft';
-      for(const k of KINDS)if(s.materials.filter(m=>m.building===s.building&&m.owner===c.id&&m.kind===k&&m.state===expected).length!==(s.plan?.template&&expected==='soft'?0:(c.cost[k]||0)))throw Error('构件材料不守恒');
+      for(const k of MATERIAL_KINDS)if(s.materials.filter(m=>m.building===s.building&&m.owner===c.id&&m.kind===k&&m.state===expected).length!==(s.plan?.template&&expected==='soft'?0:(c.cost[k]||0)))throw Error('构件材料不守恒');
     }
     const decorationSpec={
       'decor-sign':['sign',1,4,3,1,'W'],
@@ -312,7 +315,7 @@
       for(const d of b.decorations){
         if(JSON.stringify([d.kind,d.x,d.y,d.w,d.h,d.material])!==JSON.stringify(decorationSpec[d.id])||Object.keys(d.cost).length!==1||d.cost[d.material]!==1)throw Error('装饰规格损坏');
       }
-      if(number!==s.building)for(const c of b.parts)for(const k of KINDS)if(s.materials.filter(m=>m.building===number&&m.owner===c.id&&m.state==='installed'&&m.kind===k).length!==(c.cost[k]||0))throw Error('历史材料不守恒');
+      if(number!==s.building)for(const c of b.parts)for(const k of MATERIAL_KINDS)if(s.materials.filter(m=>m.building===number&&m.owner===c.id&&m.state==='installed'&&m.kind===k).length!==(c.cost[k]||0))throw Error('历史材料不守恒');
     }
     for(const m of s.materials){
       if(m.state==='free'){if(m.owner!==null||m.building!==null)throw Error('自由材料归属错误');continue;}
@@ -320,10 +323,11 @@
       const definition=[...b.plan.parts,...b.decorations].find(c=>c.id===m.owner);
       if(!definition||!(definition.cost[m.kind]>0)||(m.building!==s.building&&m.state!=='installed'))throw Error('材料归属不合法');
     }
+    GATHER?.validate(s);
     return true;
   }
   function save(s) { validate(s);return JSON.stringify(s); }
   function restore(text) { if(text.length>12000000)throw Error('存档过大');const s=JSON.parse(text);if(s.status==='idle')s.blueprint='modular';else if(s.blueprint===undefined)s.blueprint='blueprint-castle';if(s.speed===.5||s.speed===1.5)s.speed=1;validate(s);return s; }
-  const api={KINDS,LABELS,GRID,GROUND,ORIGIN,CATALOG,BLUEPRINTS,create,preview,shuffle,addMaterials,start,advance,next,inventory,score,feasible,choose,reserve,validate,save,restore,taskLabel,hash};
+  const api={KINDS,MATERIAL_KINDS,LABELS,GRID,GROUND,ORIGIN,CATALOG,BLUEPRINTS,create,preview,shuffle,addMaterials,start,advance,next,inventory,score,feasible,choose,reserve,validate,save,restore,taskLabel,hash};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.TownEngine=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

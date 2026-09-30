@@ -2,7 +2,7 @@
 (function(root){
  'use strict';
  const VERSION='cutaway-haul-v1',GROUND=272;
- const supply=kind=>({x:kind==='W'?68:kind==='S'?107:146,y:GROUND});
+ const supply=kind=>({x:kind==='W'?68:kind==='S'?107:kind==='D'?185:146,y:GROUND});
  function timeline(part,ids,kinds,start,target){
   const steps=[];let at={...start},time=0;
   function add(phase,to,seconds,unit,held=false){

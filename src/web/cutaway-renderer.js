@@ -35,11 +35,11 @@
     for(let i=0;i<80;i++){const x=i*79%480,y=280+i*37%22;box(c,x,y,3,2,i%2?'#9c8161':'#6c634e');}
   }
   function stock(c,s){
-    const amounts=root.TownEngine.inventory(s);const colors={W:'#a8794c',S:'#89939a',C:'#ca8063'};
-    for(const [i,k] of ['W','S','C'].entries()){
+    const amounts=root.TownEngine.inventory(s);const colors={W:'#a8794c',S:'#89939a',C:'#ca8063',B:'#8d7850',D:'#947050'};
+    for(const [i,k] of (s.plan?.wilderness?['W','S','B','D']:['W','S','C']).entries()){
       const pose=s.active?.motion===root.TownCutawayMotion?.VERSION?root.TownCutawayMotion.sample(s.active):null;
       const taken=pose?s.active.materialKinds.filter((kind,j)=>kind===k&&(j<pose.unit||(j===pose.unit&&pose.held))).length:0;
-      const x=56+i*39,n=amounts.free[k]+amounts.reserved[k]-taken;
+      const x=({W:56,S:95,C:134,B:134,D:173})[k],n=amounts.free[k]+amounts.reserved[k]-taken;
       for(let j=0;j<Math.min(4,Math.ceil(n/4));j++){
         const yy=267-j*6;box(c,x+(j%2)*3,yy,26,5,'#514b40');box(c,x+2+(j%2)*3,yy+1,22,3,colors[k]);
       }
@@ -75,6 +75,7 @@
       c.restore();return;
     }
     const [x,y,w,h]=houseRect(p,plan),pal=palettes[plan.layout];
+    if(plan.wilderness&&root.TownWildernessArt){root.TownWildernessArt.draw(c,p,x,y,w,h,time);return;}
     if(plan.artStyle?.startsWith('woodland-')&&root.TownCottageArt){
       if(time&&typeof document!=='undefined'&&['plant','curtains','ivy'].includes(p.kind))movingCottagePart(c,p,x,y,w,h,time);
       else root.TownCottageArt.draw(c,p,x,y,w,h);
@@ -221,7 +222,7 @@
       const offset=metric?3:0;
       box(c,x+4,y-12+offset,4,3,'#f5ddbb');
       box(c,x+7,y-17+offset,12,8,'#4f493f');
-      box(c,x+8,y-16+offset,10,6,held==='W'?'#b1834d':held==='S'?'#929c9b':'#c98569');
+      box(c,x+8,y-16+offset,10,6,held==='W'?'#b1834d':held==='S'?'#929c9b':held==='B'?'#8d7850':held==='D'?'#947050':held==='bucket'?'#64858a':'#c98569');
       box(c,x+9,y-15+offset,5,1,held==='W'?'#dfb57b':'#d2c4a3');
     }
     if(hammer){
@@ -247,6 +248,7 @@
     c.restore();
   }
   function viewport(s,preview=false){
+    if(s.plan?.wilderness&&(preview||s.status==='done'))return [208,148,232,147];
     if(s.plan?.artStyle==='woodland-v3'&&(preview||s.status==='done'))return [104,144,272,160];
     return s.plan?.artStyle?.startsWith('woodland-')&&(preview||s.status==='done')?[120,136,240,152]:[0,0,480,304];
   }
@@ -296,7 +298,7 @@
       if(seen.has(source.id))continue;
       const [x,y,w]=houseRect(source,s.plan);
       let outlet;
-      if(source.asset==='chimney')outlet=[x+w/2,y];
+      if(source.asset==='chimney'||source.kind==='flue')outlet=[x+w/2,y];
       else if(source.kind==='roof'&&s.plan.layout==='stone'&&!s.plan.artStyle)outlet=[x+23,y+5];
       if(!outlet)continue;
       if(p.tileSource){const [tx,ty]=houseRect(p,s.plan);if(outlet[0]<tx||outlet[0]>=tx+G||outlet[1]<ty||outlet[1]>=ty+G)continue;}
@@ -315,8 +317,10 @@
     const environmentPlan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint);
     const retreat=environmentPlan?.artStyle==='woodland-v3';
     const time=preview?0:Math.floor(clock*12)/12;
-    if(!retreat||!root.TownCottageArt?.environment(c))ground(c,time);
-    scenery(c,time,retreat);chimneySmoke(c,s,time,preview);
+    const wilderness=environmentPlan?.wilderness;
+    if(wilderness)root.TownWildernessArt.environment(c,s,time);
+    else {if(!retreat||!root.TownCottageArt?.environment(c))ground(c,time);scenery(c,time,retreat);}
+    chimneySmoke(c,s,time,preview);
     if(!preview)stock(c,s);
     const plan=s.plan;if(plan){
       const style=plan.modular?{...plan,layout:plan.recipe.budget.S>plan.recipe.budget.W?'stone':'wood'}:plan;
@@ -330,9 +334,11 @@
       layers.sort((a,b)=>a.p.layer-b.p.layer||a.p.y-b.p.y);
       for(const {p,progress}of layers){c.save();if(progress<1){const [x,y,w,h]=houseRect(p,style);c.beginPath();c.rect(x-8,y+h*(1-progress)-7,w+16,h*progress+15);c.clip();}if(plan.modular)modulePart(c,p,style,time);else drawPart(c,p,style,time);c.restore();}
     }
-    if(!retreat)shrubs(c,time);
+    if(!retreat&&!wilderness)shrubs(c,time);
+    if(wilderness&&!preview)root.TownWildernessArt.gatherOverlay(c,s,time);
     root.TownCutawayLighting?.drawEmitters(c,s,time,preview);
-    if(preview&&s.plan?.artStyle?.startsWith('woodland-')){
+    if(preview&&wilderness){pet(c,{x:265,y:272},1,0,'B',false,true);}
+    else if(preview&&s.plan?.artStyle?.startsWith('woodland-')){
       pet(c,{x:230,y:256},0,0,null,false,true);
     }else if(preview&&s.plan?.residential){
       pet(c,{x:29,y:269},0,0,null,false,true);
@@ -357,7 +363,9 @@
           for(let yy=worker.y+7;yy<Y;yy+=9)box(c,worker.x-6,yy,14,2,'#c19b66');
         }
       }
+      const gathering=wilderness?root.TownWildGather.sample(s.wilderness):null;
       for(let i=0;i<2;i++)pet(c,s.pets[i],i,t,
+        i===1&&gathering?gathering.held:
         a&&a.workers.includes(i)?pose?pose.held:['carry','climb'].includes(a.phase)?a.part.material:null:null,
         a&&a.workers.includes(i)&&(pose?pose.hammer:a.phase==='install'),!s.plan||!!s.plan.residential);
     }

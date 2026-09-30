@@ -156,7 +156,7 @@
       if(!pipeline){pipeline=create();if(!pipeline){unavailable=true;return false;}}
       const p=pipeline,gl=p.gl;if(p.lost||gl.isContextLost())return false;
       // Extra artwork texels do not change the 16-unit construction grid.
-      const density=s.plan?.artStyle?.startsWith('woodland-')?2:1;
+      const density=s.plan?.wilderness||s.plan?.artStyle?.startsWith('woodland-')?2:1;
       const resized=p.density!==density;
       if(resized){
         p.density=density;p.output.width=WIDTH*density;p.output.height=HEIGHT*density;
@@ -168,7 +168,7 @@
       }
       root.TownCutawayRenderer.drawBase(p.inputs[0],s,clock,preview,true);
       const parts=preview?s.plan?.parts:s.installed;
-      const revision=root.TownCottageArt?.revision||0;
+      const revision=(root.TownCottageArt?.revision||0)+(root.TownWildernessArt?.revision||0);
       const changed=resized||p.artRevision!==revision||p.surfacePlan!==s.plan||p.parts!==parts||p.partCount!==parts?.length;
       const motionTick=preview?0:Math.floor(clock*12);
       const moving=parts?.some(p=>['plant','curtains','ivy','planter','hearth','banner','flag'].includes((p.tileSource||p).kind||(p.tileSource||p).asset));
