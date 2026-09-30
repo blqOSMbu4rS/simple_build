@@ -214,10 +214,16 @@
     }
     c.restore();
   }
-  function viewport(s,preview=false){return s.plan?.artStyle?.startsWith('woodland-')&&(preview||s.status==='done')?[120,136,240,152]:[0,0,480,304];}
+  function viewport(s,preview=false){
+    if(s.plan?.artStyle==='woodland-v3'&&(preview||s.status==='done'))return [104,144,272,160];
+    return s.plan?.artStyle?.startsWith('woodland-')&&(preview||s.status==='done')?[120,136,240,152]:[0,0,480,304];
+  }
   function drawBase(canvas,s,clock=0,preview=false,world=false){
     const c=canvas.getContext('2d'),[vx,vy,vw,vh]=world?[0,0,480,304]:viewport(s,preview);
-    c.imageSmoothingEnabled=false;c.save();c.scale(canvas.width/vw,canvas.height/vh);c.translate(-vx,-vy);ground(c);
+    c.imageSmoothingEnabled=false;c.save();c.scale(canvas.width/vw,canvas.height/vh);c.translate(-vx,-vy);
+    const environmentPlan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint);
+    const retreat=environmentPlan?.artStyle==='woodland-v3';
+    if(!retreat||!root.TownCottageArt?.environment(c))ground(c);
     if(!preview)stock(c,s);
     const plan=s.plan;if(plan){
       const style=plan.modular?{...plan,layout:plan.recipe.budget.S>plan.recipe.budget.W?'stone':'wood'}:plan;
@@ -231,7 +237,7 @@
       layers.sort((a,b)=>a.p.layer-b.p.layer||a.p.y-b.p.y);
       for(const {p,progress}of layers){c.save();if(progress<1){const [x,y,w,h]=houseRect(p,style);c.beginPath();c.rect(x-8,y+h*(1-progress)-7,w+16,h*progress+15);c.clip();}if(plan.modular)modulePart(c,p,style);else drawPart(c,p,style);c.restore();}
     }
-    shrubs(c);
+    if(!retreat)shrubs(c);
     if(preview&&s.plan?.artStyle?.startsWith('woodland-')){
       pet(c,{x:230,y:256},0,0,null,false,true);
     }else if(preview&&s.plan?.residential){

@@ -1,9 +1,10 @@
 (function(){
   'use strict';
   const E=TownEngine,R=TownCutawayRenderer,$=id=>document.getElementById(id),KEY='desktop-build-cutaway-study-v1';
-  const plans=E.BLUEPRINTS.filter(p=>p.residential&&p.gridBuild&&p.sourcePlanId!=='cutaway-window-cottage-v1');let state=E.create(42),selected=0,clock=0,lastSave=0;
+  const plans=E.BLUEPRINTS.filter(p=>p.residential&&p.gridBuild&&!['cutaway-window-cottage-v1','cutaway-window-cottage-v2'].includes(p.sourcePlanId));let state=E.create(42),selected=0,clock=0,lastSave=0;
   try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||p.sourcePlanId===data.selected));if(state.status==='building'||state.status==='finishing')state.paused=true;}}
   catch(err){console.warn('2D study restore:',err);state=E.create(42);}
+  if(state.status==='idle')state.blueprint=plans[selected].id;
   function persist(){try{localStorage.setItem(KEY,JSON.stringify({selected:plans[selected].id,state:E.save(state)}));lastSave=clock;}catch(err){$('status').textContent='自动保存不可用';console.warn(err);}}
   function update(){
     const plan=state.plan||plans[selected],inv=E.inventory(state);
@@ -17,7 +18,7 @@
     for(const k of E.KINDS)$('stock-'+k).textContent=inv.free[k]+inv.reserved[k];
     $('play').textContent=state.status==='done'?'下一块空地 →':state.paused?'继续建造 ▶':state.status==='building'||state.status==='finishing'?'暂停 Ⅱ':state.status==='waiting'?'等待材料 · 继续':'开始建造 ▶';
     $('speed').value=String(state.speed);
-    $('status').textContent=state.plan?.sourcePlanId==='cutaway-window-cottage-v1'?'旧版书屋 · 重新开始或下一块空地使用新版':state.plan&&!state.plan.residential?'旧版进度 · 重新开始可使用新版住宅':state.status==='done'?'房子完工了':state.status==='waiting'?'等待材料':state.paused?'施工暂停':'本地自动存档';
+    $('status').textContent=['cutaway-window-cottage-v1','cutaway-window-cottage-v2'].includes(state.plan?.sourcePlanId)?'旧版书屋 · 重新开始或下一块空地使用新版':state.plan&&!state.plan.residential?'旧版进度 · 重新开始可使用新版住宅':state.status==='done'?'房子完工了':state.status==='waiting'?'等待材料':state.paused?'施工暂停':'本地自动存档';
   }
   for(const [i,p]of plans.entries()){
     const button=document.createElement('button');button.type='button';button.className='card';button.setAttribute('aria-label','选择'+p.name);

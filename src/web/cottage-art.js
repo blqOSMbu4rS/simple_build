@@ -7,8 +7,11 @@
   const regions={shelf:[94,4,265,466],table:[427,128,522,342],chair:[991,84,215,377],
     bench:[16,557,501,282],cabinet:[553,473,367,366],plant:[966,478,273,366],
     window:[36,850,458,385],curtains:[525,849,398,397],'wall-shelf':[938,867,304,373]};
-  let atlas,roofImage,wallImage,sectionRoof;
-  const api={draw,revision:0};
+  let atlas,roofImage,wallImage,sectionRoof,frontAtlas,forest;
+  const frontRegions={shelf:[59,14,393,493],table:[476,143,449,356],chair:[950,127,332,376],
+    bench:[46,606,557,239],cabinet:[620,515,292,333],plant:[954,507,337,341],
+    curtains:[66,859,518,337],'wall-shelf':[706,851,541,347]};
+  const api={draw,environment,revision:0};
   function loadImage(source,accept){return typeof Image==='undefined'?Promise.resolve(false):new Promise(resolve=>{
     if(!source){resolve(false);return;}
     const image=new Image();
@@ -20,7 +23,9 @@
     loadImage(root.TownCottageAtlas,image=>{atlas=image;}),
     loadImage(root.TownCottageRoof,image=>{roofImage=image;}),
     loadImage(root.TownCottageWall,image=>{wallImage=image;}),
-    loadImage(root.TownCottageSectionRoof,image=>{sectionRoof=image;})
+    loadImage(root.TownCottageSectionRoof,image=>{sectionRoof=image;}),
+    loadImage(root.TownCottageFrontAtlas,image=>{frontAtlas=image;}),
+    loadImage(root.TownCottageForest,image=>{forest=image;})
   ]).then(results=>results.every(Boolean));
   function sprite(c,kind,x,y,w,h){
     const r=regions[kind],scale=Math.min(w/r[2],h/r[3]);
@@ -55,8 +60,72 @@
     c.drawImage(roofImage,11+sw-edge,93,edge,sh,wing+center,h-dh,wing,dh);
     return roofCache;
   }
+  function environment(c){
+    if(!forest)return false;
+    c.imageSmoothingEnabled=false;
+    // The source ground edge is at row 779. Align it with the simulation floor.
+    c.drawImage(forest,0,0,forest.width,779,0,0,480,272);
+    c.drawImage(forest,0,779,forest.width,forest.height-779,0,272,480,32);
+    return true;
+  }
+  function retreat(c,p,w,h){
+    const b=(x,y,w,h,color)=>{c.fillStyle=color;c.fillRect(x,y,w,h);};
+    if(p.kind==='foundation'){
+      b(0,0,w,2,'#8a7250');b(0,2,w,1,'#403c2d');b(0,3,w,h-3,'#1d302e');
+      for(let x=0;x<w;x+=9){const y=4+(x%3);b(x+.5,y,8,5,'#4b5b50');b(x+1,y,6,.5,'#84917a');b(x+2,y+1,2,.5,'#697766');
+        b(x+1,y+5,7,2,'#293d36');b(x+2,y+7,5,1,'#354e3b');}
+      return true;
+    }
+    if(p.kind==='wall'){
+      b(0,0,w,h,'#354b49');
+      // Frontal wallpaper and shallow paneling; narrow stone section edges.
+      for(let x=6;x<w-6;x+=4){b(x,0,.5,h-22,'#3c5350');
+        for(let y=5;y<h-22;y+=8){b(x+1,y,.5,1,'#5d6e5c');b(x,y+1,1,.5,'#4b6055');}}
+      b(5,h-23,w-10,22,'#493c30');b(5,h-23,w-10,1,'#96774f');
+      for(let x=6;x<w-5;x+=11){b(x,h-21,.5,19,'#9a7850');b(x+1,h-20,8,17,'#514335');b(x+2,h-18,.5,12,'#69533b');}
+      for(const x of [0,w-5]){
+        b(x,0,5,h,'#303d39');
+        for(let y=0;y<h;y+=7){b(x+.5,y,4,6,'#647064');b(x+1,y,3,.5,'#a3a085');b(x+1+(y%2),y+2,1,2,'#7e8773');b(x,y+6,5,1,'#263531');}
+        b(x+(x?0:4.5),0,.5,h,'#b19769');
+      }
+      return true;
+    }
+    if(p.kind==='roof'){
+      // A shallow bowed contour, with staggered slate edges and moss clusters.
+      for(let x=0;x<w;x+=.5){
+        const t=x/w,curve=Math.round(6*Math.pow(Math.abs(t-.5)*2,2)*2)/2;
+        const top=11+curve+(Math.floor(x/7)%3)*.5;
+        b(x,top,.5,10,'#273c3c');b(x,top+2,.5,3,'#526461');
+        b(x,top+5,.5,5,'#334c4a');b(x,top+10,.5,3,'#332e27');
+        b(x,top+12,.5,.5,'#877852');
+      }
+      for(let x=1;x<w-5;x+=5){const curve=Math.round(6*Math.pow(Math.abs(x/w-.5)*2,2)*2)/2;
+        const y=11+curve;b(x,y,4,.5,'#8a9380');b(x+1,y+3,4,.5,'#718378');
+        b(x+3,y+5,.5,4,'#203836');b(x,y+9,3,.5,'#60796a');
+        if(x%4===1){b(x,y-1.5,3,2,'#587448');b(x+1,y-2,1,.5,'#839159');}
+      }
+      for(const x of [14,45,w-34]){b(x,9,1,6,'#4d6541');b(x-2,10,3,1,'#739055');b(x+1,8,3,1,'#657f4a');}
+      return true;
+    }
+    if(p.kind==='window'){
+      b(1,1,w-2,h-2,'#292e28');b(3,3,w-6,h-6,'#28464e');
+      for(let x=4;x<w-4;x+=9){b(x,6,1,h-13,'#3b6265');b(x-2,14,5,1,'#4a7576');}
+      b(3,h-9,w-6,4,'#405d5b');b(2,2,w-4,1,'#9d7c51');
+      b(w/2-1,3,2,h-5,'#8a6948');b(3,h/2,w-6,1,'#7f684b');
+      b(0,h-3,w,3,'#795c40');b(0,h-3,w,.5,'#bc9863');return true;
+    }
+    if(p.kind==='lamp'&&p.invisible)return true;
+    const r=frontRegions[p.kind];
+    if(frontAtlas&&r){
+      const scale=Math.min((w-1)/r[2],(h-1)/r[3]),dw=Math.round(r[2]*scale*2)/2,dh=Math.round(r[3]*scale*2)/2;
+      c.imageSmoothingEnabled=false;
+      c.drawImage(frontAtlas,...r,(w-dw)/2,h-dh,dw,dh);return true;
+    }
+    return false;
+  }
   function draw(c,p,x,y,w,h){
     c.save();c.translate(x,y);
+    if(p.appearance==='retreat-v3'&&retreat(c,p,w,h)){c.restore();return;}
     if(p.kind==='roof'&&p.appearance==='section-v2'&&sectionRoof){
       c.imageSmoothingEnabled=false;
       c.drawImage(sectionTexture('roof',sectionRoof,[17,95,2144,557],w,h,true),0,0,w,h);

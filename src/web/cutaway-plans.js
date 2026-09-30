@@ -279,7 +279,30 @@
   const wideCottage={...cottage,id:'cutaway-window-cottage-v2',artStyle:'woodland-v2',
     parts:cottage.parts.filter(p=>!['door','entry-step'].includes(p.id))
       .map(p=>p.kind==='roof'?{...p,appearance:'section-v2',x:-7,y:4,w:14,h:4,roofInsets:[0,0,2,3],layer:12}:{...p,appearance:'section-v2'})};
-  const catalog=[gridPlan(wideCottage),gridPlan(cottage),...residenceSpecs.map(residence).map(gridPlan),...authored.map(gridPlan),...authored,...legacy];
+  // A new site uses the shallow contour and frontal reading-room arrangement.
+  // v1/v2 remain untouched: installed material identities survive save/restore.
+  const retreat=plan('cutaway-window-cottage-v3','林窗书屋','冷夜森林 · 暖灯书房 · 正面层叠陈设','wood',a=>{
+    a('base','foundation',-6,0,12,1,'S',1,[],0);
+    a('room','wall',-6,1,12,4,'W',1,['base'],1);
+    a('window','window',-2,2,4,3,'W',1,['room'],3,{light:{x:32,y:24,radius:65,strength:.12,color:[.42,.65,.83]}});
+    a('curtains','curtains',-2,2,4,3,'C',1,['window'],4,{label:'挂好窗帘'});
+    a('books','shelf',-5,1,3,4,'W',1,['room'],5);
+    a('cabinet','cabinet',3,1,2,3,'W',1,['room'],5,{label:'装好矮柜'});
+    a('wall-shelf','wall-shelf',2,3,3,2,'W',1,['room'],5,{label:'挂好书架与干花'});
+    a('rug','rug',-4,1,9,1,'C',1,['base'],6,{label:'铺好织纹地毯'});
+    a('bench','bench',-2,1,2,2,'W',1,['rug'],7);
+    a('desk','table',0,1,3,2,'W',1,['window','rug'],8,{label:'摆好窗前书桌'});
+    a('chair','chair',-1,1,2,2,'W',1,['desk'],9);
+    a('plant','plant',5,1,1,3,'W',1,['room'],10);
+    a('ivy','ivy',-3,3,1,2,'W',1,['room'],10);
+    a('lamp','lamp',2,2,1,1,'C',1,['desk'],10,{label:'点亮桌灯',light:{x:8,y:8,radius:110,strength:.46,color:[1,.64,.30]},invisible:true});
+    a('reading-lamp','lamp',-4,2,1,1,'C',1,['books'],10,{label:'点亮书架灯',light:{x:8,y:8,radius:95,strength:.38,color:[1,.64,.30]},invisible:true});
+    a('cabinet-lamp','lamp',4,3,1,1,'C',1,['cabinet'],10,{label:'点亮矮柜灯',light:{x:8,y:8,radius:85,strength:.32,color:[1,.64,.30]},invisible:true});
+    a('roof','roof',-7,4,14,2,'W',1,['room'],12,{roofInsets:[0,0]});
+  });
+  Object.assign(retreat,{artStyle:'woodland-v3',residential:true,pixelsPerMeter:16,petHeightMeters:1,spaces:1});
+  retreat.parts=retreat.parts.map(p=>({...p,appearance:'retreat-v3'}));
+  const catalog=[gridPlan(retreat),gridPlan(wideCottage),gridPlan(cottage),...residenceSpecs.map(residence).map(gridPlan),...authored.map(gridPlan),...authored,...legacy];
   if(typeof module!=='undefined'&&module.exports)module.exports=catalog;
   else root.TownBlueprints=catalog;
 })(globalThis);
