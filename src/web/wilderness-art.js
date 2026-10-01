@@ -163,40 +163,52 @@
       }
     }
     ctx.putImageData(fixed,0,0);fc.putImageData(leaves,0,0);
-    const water=[];
-    // Texture moves within each connected water run, never across the shoreline.
-    for(let frame=0;frame<16;frame++){
-      const layer=canvas(56*scale,74*scale),wc=layer.getContext('2d'),pixels=wc.createImageData(layer.width,layer.height);
-      for(let y=160*scale;y<234*scale;y++)for(let x=424*scale;x<width;){
-        if(!waterMask[y*width+x]){x++;continue;}const start=x;
-        while(x<width&&waterMask[y*width+x])x++;const runWidth=x-start;
-        for(let xx=start;xx<x;xx++){
-          let sx=start+(xx-start-Math.floor(frame*runWidth/16)+runWidth)%runWidth,sy=y;
-          // The two cascades descend; the pools flow toward the right foreground.
-          if((xx>=452*scale&&y>=177*scale&&y<198*scale)||(xx>=471*scale&&y>=211*scale&&y<221*scale)){
-            let top=y,bottom=y;while(top>160*scale&&waterMask[(top-1)*width+xx])top--;
-            while(bottom<234*scale-1&&waterMask[(bottom+1)*width+xx])bottom++;
-            const runHeight=bottom-top+1;sx=xx;sy=top+(y-top-Math.floor(frame*runHeight/16)+runHeight)%runHeight;
-          }
-          const i=(sy*width+sx)*4;pixels.data.set(original.data.subarray(i,i+4),((y-160*scale)*layer.width+xx-424*scale)*4);
-        }
-      }
-      wc.putImageData(pixels,0,0);water.push(layer);
+    const water=canvas(56*scale,74*scale),wc=water.getContext('2d'),pixels=wc.createImageData(water.width,water.height);
+    for(let y=160*scale;y<234*scale;y++)for(let x=424*scale;x<width;x++)if(waterMask[y*width+x]){
+      const i=(y*width+x)*4;pixels.data.set(original.data.subarray(i,i+4),((y-160*scale)*water.width+x-424*scale)*4);
     }
-    return sceneryLayers={image,base,foliage,water,scale};
+    wc.putImageData(pixels,0,0);
+    return sceneryLayers={image,base,foliage,water,flow:canvas(water.width,water.height),scale};
   }
   function wind(time,phase=0){
     return (Math.sin(time*.9+phase)-Math.sin(phase))*(.7+.3*Math.sin(time*.23)**2);
   }
+  const creekCurrents=[
+    {points:[[434,164],[446,166],[457,171],[464,175]],speed:5,gap:9},
+    {points:[[460,178],[459,185],[458,193],[460,198]],speed:9,gap:7},
+    {points:[[465,178],[464,187],[463,195],[466,199]],speed:10,gap:8},
+    {points:[[458,200],[469,202],[480,200]],speed:6,gap:8},
+    {points:[[477,205],[479,210],[478,216],[480,219]],speed:9,gap:7},
+    {points:[[474,222],[479,225],[485,227]],speed:6,gap:8}
+  ].map(current=>({...current,lengths:current.points.slice(1).map((p,i)=>Math.hypot(p[0]-current.points[i][0],p[1]-current.points[i][1]))}));
+  function flowingWater(c,layers,time){
+    const {flow,water,scale:k}=layers,f=flow.getContext('2d');
+    f.clearRect(0,0,flow.width,flow.height);f.save();f.scale(k,k);f.translate(-424,-160);
+    // Ripples travel along the authored channel at a constant speed. The painted
+    // water and shoreline stay intact; no independent row/column texture wrapping.
+    for(const current of creekCurrents){
+      const length=current.lengths.reduce((a,b)=>a+b,0);
+      for(let n=0;n<Math.ceil(length/current.gap);n++){
+        const distance=(time*current.speed+n*current.gap)%length;
+        let remaining=distance,segment=0;
+        while(segment<current.lengths.length-1&&remaining>current.lengths[segment])remaining-=current.lengths[segment++];
+        const a=current.points[segment],b=current.points[segment+1],t=remaining/current.lengths[segment];
+        const x=a[0]+(b[0]-a[0])*t,y=a[1]+(b[1]-a[1])*t,fall=Math.abs(b[1]-a[1])>Math.abs(b[0]-a[0]);
+        f.globalAlpha=.24*Math.min(1,distance/4,(length-distance)/4);
+        box(f,x,y,fall?1:4,fall?4:1,'#7ea5b8');
+        box(f,x+(fall?1:0),y+(fall?0:1),fall?1:3,fall?3:1,'#315c7d');
+      }
+    }
+    f.restore();f.globalCompositeOperation='destination-in';f.drawImage(water,0,0);f.globalCompositeOperation='source-over';
+    c.drawImage(water,424,160,56,74);c.drawImage(flow,424,160,56,74);
+  }
   function animatedScenery(c,image,time){
     time=Math.max(0,time);
-    const layers=splitScenery(image),k=layers.scale;c.drawImage(layers.base,0,0,480,304);
-    // Broad independent crowns follow the same passing gust, in whole pixel steps.
-    for(let x=0;x<480;x+=80)for(let y=0;y<178;y+=16){
-      const h=Math.min(16,178-y),dx=Math.round(wind(time,x*.013+y*.006));
-      c.drawImage(layers.foliage,x*k,y*k,80*k,h*k,x+dx,y,80,h);
-    }
-    c.drawImage(layers.water[Math.floor(time*8)%16],424,160,56,74);
+    const layers=splitScenery(image);c.drawImage(layers.base,0,0,480,304);
+    // One intact canopy layer receives one displacement. Never split a crown
+    // into bands with different offsets: that tears branches and leaf silhouettes.
+    c.drawImage(layers.foliage,Math.round(wind(time)),0,480,304);
+    flowingWater(c,layers,time);
     // Sparse leaves travel from the canopy and fade before reaching the worksite.
     for(let i=0;i<6;i++){
       const age=(time*.12+i*.173)%1;if(age>.8)continue;
@@ -245,13 +257,10 @@
   function standingTree(c,x,y,index,time=0,angle=0){
     const image=images['timber-tree'+(index%3)];
     if(image){
-      c.save();c.translate(x,y);c.rotate(angle);const h=[88,94,90,92][index],w=h*image.width/image.height;
-      // Root and lower trunk remain anchored; a felled tree follows only its fall.
-      for(let row=0;row<image.height;row+=32){
-        const sh=Math.min(32,image.height-row),rise=1-row/image.height;
-        const dx=angle?0:Math.round(wind(time,index*.8)*Math.max(0,(rise-.3)/.7));
-        c.drawImage(image,0,row,image.width,sh,-w/2+dx,-h+row*h/image.height,w,sh*h/image.height);
-      }c.restore();return;
+      c.save();c.translate(x,y);c.rotate(angle||wind(time,index*.8)*.012);
+      const h=[88,94,90,92][index],w=h*image.width/image.height;
+      // Rotate the entire tree about its root, including an intact crown/trunk.
+      c.drawImage(image,-w/2,-h,w,h);c.restore();return;
     }
     c.save();c.translate(x,y);c.rotate(angle);
     const height=[42,49,38,45][index];
