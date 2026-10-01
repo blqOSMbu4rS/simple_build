@@ -49,8 +49,10 @@
     $('progress').textContent=`${state.installed.length} / ${state.plan?.parts.length||plan.parts.length} ${plan.wholeTimber?'件':'块'}`;
     const action=TownCutawayMotion.accepts(state.active)?TownCutawayMotion.sample(state.active):null;
     const actionLabels={descend:'返回料堆',fetch:'前往料堆',pickup:'拿起一块材料',carry:'搬运一块材料',climb:'搬往高处施工点',deliver:'放下材料',install:'敲打建造中',reveal:'烟雾散去，方块完成',
-      'team-pickup':'两人握住圆木两端','team-carry':'两人合抬圆木到墙下',stage:'在墙下放稳圆木',lift:'两人从地面抬升圆木',align:'对齐并固定原木墙'};
-    $('message').textContent=action?(state.paused?'已暂停 · ':'')+actionLabels[action.phase]+' · '+state.active.part.label+' · 已送达 '+action.delivered+'/'+state.active.materialIds.length:state.message;
+      'team-pickup':'两人握住圆木两端','team-carry':'两人合抬圆木到墙下',stage:'在墙下放稳圆木',lift:'两人从地面抬升圆木',align:'对齐并固定原木墙',
+      'to-mix':'把泥料送到前景和泥盆',mix:'在和泥盆搅拌泥料','load-mud':'装好一桶湿泥',seal:'用泥抹封圆木之间的缝隙'};
+    const mudLabels={carry:'提泥桶到墙边',climb:'把湿泥送到上层墙缝',deliver:'放好泥桶',reveal:'这段圆木墙缝已封好'};
+    $('message').textContent=action?(state.paused?'已暂停 · ':'')+(action.mud&&mudLabels[action.phase]||actionLabels[action.phase])+' · '+state.active.part.label+' · 已送达 '+action.delivered+'/'+state.active.materialIds.length:state.message;
     $('cost').textContent='总用料 '+Object.entries(plan.costs).filter(([,n])=>n).map(([k,n])=>`${E.LABELS[k]} ${n}`).join(' · ')+(state.missing?' · 当前缺 '+Object.entries(state.missing.amounts).map(([k,n])=>`${E.LABELS[k]} ${n}`).join('、'):'');
     for(const k of E.MATERIAL_KINDS)$('stock-'+k).textContent=inv.free[k]+inv.reserved[k];
     $('play').textContent=state.status==='done'?'下一块空地 →':state.paused?'继续建造 ▶':state.status==='building'||state.status==='finishing'?'暂停 Ⅱ':state.status==='waiting'?(state.plan?.wilderness?'暂停采集 Ⅱ':'等待材料 · 继续'):'开始建造 ▶';

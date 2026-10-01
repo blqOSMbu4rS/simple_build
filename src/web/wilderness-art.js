@@ -1,7 +1,7 @@
 /* Separate sprites, geology and source animation; installed tiles own the house. */
 (function(root){
   'use strict';
-  const images={},api={draw,environment,trees,gatherOverlay,timberOverlay,installedLog,windowPanes,ensure,revision:0};
+  const images={},api={draw,environment,trees,gatherOverlay,timberOverlay,mudOverlay,installedLog,windowPanes,ensure,revision:0};
   const sources={...Object.fromEntries(Object.entries({...root.TownWildernessAssetsV2,...root.TownWildernessAssetsV4,...root.TownWildernessAssetsV5,...root.TownWildernessAssetsV6}).map(([k,v])=>['v2-'+k,v])),...Object.fromEntries(Object.entries(root.TownWildernessTimber||{}).map(([k,v])=>['timber-'+k,v]))};
   function load(sources){return Promise.all(Object.entries(sources).map(([key,url])=>typeof Image==='undefined'?Promise.resolve(false):new Promise(resolve=>{
     const image=new Image();image.onload=()=>{images[key]=image;api.revision++;resolve(true);};
@@ -27,7 +27,7 @@
   function windowPanes(x,y,w,h){
     return [[8,21,22,15],[34,21,22,15],[8,40,22,13],[34,40,22,13]].map(([px,py,pw,ph])=>[x+px*w/64,y+py*h/64,pw*w/64,ph*h/64]);
   }
-  function drawV2(c,p,x,y,w,h,time){
+  function drawV2(c,p,x,y,w,h,time,plan){
     const sprite=(name,xx=x,yy=y,ww=w,hh=h)=>{const image=images['v2-'+name];if(image)c.drawImage(image,xx,yy,ww,hh);};
     if(p.kind==='wall'){
       sprite('back');sprite('side',x,y,7,h);sprite('side',x+w-7,y,7,h);
@@ -45,6 +45,16 @@
         if(i%11===0)box(c,x+i,yy+1,3,1,'#96754b');
       }
     }else if(p.kind==='chinking'){
+      if(plan?.wholeTimber){
+        // Installed clay sits behind the round logs and seals their transparent gaps.
+        // The renderer still clips this layer to each completed construction cell.
+        c.save();c.beginPath();c.rect(x+7,y,w-14,h);c.clip();
+        box(c,x+7,y,w-14,h,'#887354');
+        for(let row=1;row<h;row+=4)for(let col=8;col<w-7;col+=11){
+          box(c,x+col,y+row+(col%3),6,1,(row+col)%2?'#927e5e':'#7b664b');
+        }
+        c.restore();return;
+      }
       // Clay follows irregular bark seams rather than drawing ruler-straight rows.
       c.save();c.globalAlpha=.18;
       for(let row=7;row<h-3;row+=7)for(let col=9;col<w-9;col+=7){
@@ -86,7 +96,7 @@
     }else sprite(p.kind);
   }
   function draw(c,p,x,y,w,h,time=0,plan){
-    if(plan?.artStyle==='creek-v2'){drawV2(c,p,x,y,w,h,time);return;}
+    if(plan?.artStyle==='creek-v2'){drawV2(c,p,x,y,w,h,time,plan);return;}
     loadLegacy();
     const kind=p.kind;
     if(kind==='wall'){
@@ -239,6 +249,26 @@
       box(c,center-10+stroke,265,20,2,'#77817a');
       box(c,center-12+stroke,263,2,5,'#805d3c');box(c,center+10+stroke,263,2,5,'#805d3c');
       box(c,center-4,271,3,1,'#8f6a43');
+    }
+  }
+  function mudOverlay(c,pose,time,projectX=x=>x){
+    if(!pose?.mud)return;
+    const x=projectX(pose.x),y=pose.y;
+    if(pose.phase==='mix'){
+      const stroke=Math.round(Math.sin(time*7)*3);
+      box(c,x+8+stroke,y-15,2,13,'#947447');
+      box(c,x+5+stroke,y-3,8,2,'#8e6945');
+      box(c,x+4+stroke,y-10,5,3,'#d8b38b');
+    }else if(['load-mud','carry','climb','deliver','seal'].includes(pose.phase)){
+      // A mud pail and a small trowel replace the generic hammer animation.
+      box(c,x+7,y-11,9,7,'#493e30');box(c,x+8,y-10,7,5,'#806044');
+      box(c,x+8,y-11,7,2,'#987052');
+      if(pose.phase==='seal'){
+        const stroke=Math.round(Math.sin(time*8)*2);
+        box(c,x+7,y-14+stroke,6,3,'#d8b38b');
+        box(c,x+12,y-15+stroke,3,2,'#876443');
+        box(c,x+15,y-14+stroke,5,2,'#7b8072');
+      }
     }
   }
   function gatherOverlay(c,s,time,projectX=x=>x){

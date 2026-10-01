@@ -174,7 +174,7 @@
     for(const m of stock)m.state='hard'; // Dedicated shaping begins at claim: irreversible and atomic.
     if(s.plan.cutaway){
       const target={x:ORIGIN+(c.x+c.w/2)*GRID-(timber?0:12),y:Math.min(GROUND,GROUND-c.y*GRID)};
-      s.active=MOT.create(c,stock,s.pets,s.plan.wilderness?0:hash(c.id)%2,target,timber);
+      s.active=MOT.create(c,stock,s.pets,s.plan.wilderness?0:hash(c.id)%2,target,timber,MOT.isChinking(s.plan,c));
       note(s,taskLabel(c)+(timber?' · 两人抬木，到墙下再抬升对齐':s.plan.gridBuild?' · 搬一块，建一格':' · 每次搬一块，搬齐后敲打建造'));return;
     }
     const target=(s.plan.modular?MOD.workPoint(s.plan,c):ART.workPoint(s.plan,c.id))||{x:ORIGIN+(c.x+c.w/2)*GRID,y:Math.min(GROUND,GROUND-c.y*GRID)};
@@ -287,6 +287,7 @@
       if(a.motion!==undefined&&(!s.plan.cutaway||!MOT?.accepts(a)))throw Error('未知施工动作版本');
       if(MOT?.accepts(a)){
         if(MOT.isTeam(a)&&!MOT.isTimber(s.plan,a.part))throw Error('合抬图纸损坏');
+        if(a.motion===MOT.MUD_VERSION&&!MOT.isChinking(s.plan,a.part))throw Error('泥封图纸损坏');
         MOT.validate(a,s.materials);
       }
       if(!Array.isArray(a.durations)||(!MOT?.accepts(a)&&a.durations.length!==6)||a.durations.some(n=>!Number.isFinite(n)||n<0||n>120)||!Number.isFinite(a.total)||Math.abs(a.durations.reduce((x,y)=>x+y,0)-a.total)>.001)throw Error('施工时间损坏');

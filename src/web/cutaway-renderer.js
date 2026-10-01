@@ -25,7 +25,10 @@
     }
     return 328+(display-247)/1.8;
   }
-  function renderLayer(p,plan){return plan.artStyle==='creek-v2'&&(p.tileSource||p).kind==='flue'?5.5:p.layer;}
+  function renderLayer(p,plan){
+    if(plan.wholeTimber&&(p.tileSource||p).kind==='chinking')return 1.5;
+    return plan.artStyle==='creek-v2'&&(p.tileSource||p).kind==='flue'?5.5:p.layer;
+  }
   function windowGlass(c,s,preview,surface=false,clock=0){
     const plan=s.plan;if(plan?.artStyle!=='creek-v2')return;
     for(const p of (preview?plan.parts:s.installed).filter(p=>p.kind==='window')){
@@ -272,9 +275,11 @@
     if(held){
       const offset=metric?3:0;
       box(c,x+4,y-12+offset,4,3,'#f5ddbb');
-      box(c,x+7,y-17+offset,12,8,'#4f493f');
-      box(c,x+8,y-16+offset,10,6,held==='W'?'#b1834d':held==='S'?'#929c9b':held==='B'?'#8d7850':held==='D'?'#947050':held==='bucket'?'#64858a':'#c98569');
-      box(c,x+9,y-15+offset,5,1,held==='W'?'#dfb57b':'#d2c4a3');
+      if(held!=='mud'){
+        box(c,x+7,y-17+offset,12,8,'#4f493f');
+        box(c,x+8,y-16+offset,10,6,held==='W'?'#b1834d':held==='S'?'#929c9b':held==='B'?'#8d7850':held==='D'?'#947050':held==='bucket'?'#64858a':'#c98569');
+        box(c,x+9,y-15+offset,5,1,held==='W'?'#dfb57b':'#d2c4a3');
+      }
     }
     if(hammer){
       const strike=Math.sin(clock*15)>.15;
@@ -405,7 +410,7 @@
       const a=s.active,pose=root.TownCutawayMotion?.accepts(a)?root.TownCutawayMotion.sample(a):null;
       const t=s.time; // Pause, speed and save/restore share the simulation clock.
       if(a){
-        if(pose&&!pose.team&&pose.delivered>0&&!pose.visible){
+        if(pose&&!pose.team&&!pose.mud&&pose.delivered>0&&!pose.visible){
           for(let j=0;j<Math.min(6,pose.delivered);j++){
             const color=a.materialKinds[j]==='S'?'#929c9b':a.materialKinds[j]==='C'?'#c98569':'#b1834d';
             box(c,a.target.x+10+(j%2)*8,a.target.y-3-Math.floor(j/2)*5,11,4,color);
@@ -425,12 +430,15 @@
       const center=pair?.pets.reduce((n,p)=>n+p.x,0)/2;
       // Project the shared center once so the full log and both end grips stay rigid.
       const petX=x=>pair?travelX(s,center)+x-center:travelX(s,x);
-      for(let i=0;i<2;i++)pet(c,{...s.pets[i],x:petX(s.pets[i].x)},i,t,
+      // Stand at the basin's front-left rim, 60 scene pixels below the house's ground line.
+      const mudDrop=pose?.mud?(pose.mixDepth||0)*60/siteScale(s):0;
+      for(let i=0;i<2;i++)pet(c,{...s.pets[i],x:petX(s.pets[i].x),y:s.pets[i].y+(i===a?.workers[0]?mudDrop:0)},i,t,
         gathering?.team?null:i===1&&gathering?gathering.held:
         a&&a.workers.includes(i)?pose?pose.held:['carry','climb'].includes(a.phase)?a.part.material:null:null,
         a&&a.workers.includes(i)&&(pose?pose.hammer:a.phase==='install'),!s.plan||!!s.plan.residential);
       if(wilderness)root.TownWildernessArt.gatherOverlay(c,s,t,x=>travelX(s,x));
       if(pose?.team)root.TownWildernessArt.timberOverlay(c,pose,t,x=>travelX(s,x));
+      if(pose?.mud)root.TownWildernessArt.mudOverlay(c,{...pose,y:pose.y+mudDrop},t,x=>travelX(s,x));
     }
     c.restore();c.restore();
   }
