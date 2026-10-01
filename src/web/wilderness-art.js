@@ -147,7 +147,7 @@
     const patches=spots.map(([cx,cy,rx,ry])=>{
       const x=Math.round(cx-rx),y=Math.round(cy-ry),image=document.createElement('canvas');
       image.width=Math.ceil(rx*2);image.height=Math.ceil(ry*2);const p=image.getContext('2d');
-      // Small irregular leaf silhouettes, copied once with crisp pixel edges.
+      // Separate irregular crown silhouettes, copied once with crisp pixel edges.
       // Every extracted cluster subsequently moves as one intact sprite.
       for(let row=0;row<image.height;row++){
         const v=(row+.5)/ry-1,radius=Math.sqrt(Math.max(0,1-v*v))*rx*(.9+.1*Math.sin(row*1.7));
@@ -161,8 +161,8 @@
   function drawLeafClusters(c,group,time,scale=1,phase=0){
     c.drawImage(group.still,0,0);
     for(const [i,p]of group.patches.entries()){
-      const t=phase+i*.73,dx=Math.round(wind(time,t)*scale*.65);
-      const dy=Math.round((Math.sin(time*.8+t)-Math.sin(t))*scale*.2);
+      const t=phase+i*.73,dx=Math.round(wind(time,t)*scale*1.05);
+      const dy=Math.round((Math.sin(time*.8+t)-Math.sin(t))*scale*.35);
       c.drawImage(p.image,p.x+dx,p.y+dy);
     }
   }
@@ -171,12 +171,13 @@
     const foliageImage=images['v2-environment-foliage'],waterImage=images['v2-environment-water'];
     if(!foliageImage||!waterImage)return null;
     // Cache decoded layers for consistent compositing in both renderer paths.
-    // No pixel readback or mask generation is needed on the browser thread.
+    // No pixel readback or full-image scanning is needed on the browser thread.
     const copy=source=>{const a=document.createElement('canvas');a.width=source.width;a.height=source.height;a.getContext('2d').drawImage(source,0,0);return a;};
     const base=copy(image),water=copy(waterImage),scale=image.width/480;
-    const foliage=leafClusters(foliageImage,[[20,14,5,4],[68,25,5,4],[106,38,6,4],[128,77,5,4],
-      [189,47,5,4],[208,104,6,4],[229,130,5,3],[266,121,5,3],[328,140,5,3],
-      [374,119,5,4],[404,146,6,4],[460,91,5,4]].map(spot=>spot.map(n=>n*scale)));
+    const foliage=leafClusters(foliageImage,[[20,14,20,13],[68,25,24,18],[116,46,19,20],
+      [40,75,23,18],[98,101,22,18],[190,45,23,22],[202,100,23,21],
+      [248,127,21,15],[320,143,23,15],[373,116,27,22],[425,145,24,17],
+      [460,91,20,22]].map(spot=>spot.map(n=>n*scale)));
     const flow=document.createElement('canvas');flow.width=water.width;flow.height=water.height;
     return sceneryLayers={image,base,foliage,water,flow,scale};
   }
@@ -216,7 +217,7 @@
     time=Math.max(0,time);
     const layers=splitScenery(image);c.drawImage(layers?layers.base:image,0,0,480,304);
     if(!layers)return;
-    // Most foliage is stationary; only sparse small leaf clusters respond to wind.
+    // Broad crown patches sway independently; trunks and the rest stay fixed.
     c.save();c.scale(1/layers.scale,1/layers.scale);
     drawLeafClusters(c,layers.foliage,time,layers.scale);c.restore();
     flowingWater(c,layers,time);
@@ -273,7 +274,7 @@
       if(angle)c.drawImage(image,-w/2,-h,w,h);
       else{
         if(!treeLeaves.has(image))treeLeaves.set(image,leafClusters(image,
-          [[.45,.25,.07,.025],[.23,.4,.07,.025],[.8,.45,.07,.025]].map(([cx,cy,rx,ry])=>[cx*image.width,cy*image.height,rx*image.width,ry*image.height])));
+          [[.45,.25,.23,.075],[.2,.4,.18,.07],[.82,.45,.16,.08]].map(([cx,cy,rx,ry])=>[cx*image.width,cy*image.height,rx*image.width,ry*image.height])));
         c.translate(-w/2,-h);c.scale(w/image.width,h/image.height);
         drawLeafClusters(c,treeLeaves.get(image),time,image.height/h,index*.8);
       }c.restore();return;
