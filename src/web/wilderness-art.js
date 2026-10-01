@@ -142,33 +142,14 @@
   let sceneryLayers;
   function splitScenery(image){
     if(sceneryLayers?.image===image)return sceneryLayers;
-    const scale=Math.max(1,Math.round(image.width/480)),width=480*scale,height=304*scale;
-    const canvas=(w=width,h=height)=>{const a=document.createElement('canvas');a.width=w;a.height=h;return a;};
-    const base=canvas(),ctx=base.getContext('2d');ctx.imageSmoothingEnabled=false;ctx.drawImage(image,0,0,width,height);
-    const original=ctx.getImageData(0,0,width,height),fixed=ctx.getImageData(0,0,width,height);
-    const foliage=canvas(),fc=foliage.getContext('2d'),leaves=fc.createImageData(width,height);
-    const waterMask=new Uint8Array(width*height),leafMask=new Uint8Array(width*height);
-    // Extract actual painted foliage and water, leaving trunks, banks and rocks fixed.
-    for(let y=0;y<height;y++)for(let x=0;x<width;x++){
-      const n=y*width+x,i=n*4,r=original.data[i],g=original.data[i+1],b=original.data[i+2];
-      if(y<178*scale&&g>r*1.08&&g>b*1.12){leafMask[n]=1;leaves.data.set(original.data.subarray(i,i+4),i);fixed.data.set([26,48,45,255],i);}
-      if(x>=424*scale&&y>=160*scale&&y<234*scale&&b>g*1.12&&g>r*1.15){waterMask[n]=1;fixed.data.set([38,65,80,255],i);}
-    }
-    // Reconstruct only the exposed leaf edges from nearby non-leaf background.
-    // Deep canopy is replaced by forest shade, with no duplicate foliage underneath.
-    for(let y=0;y<178*scale;y++)for(let x=0;x<width;x++)if(leafMask[y*width+x]){
-      search:for(let d=1;d<=3*scale;d++)for(const [dx,dy]of [[-d,0],[d,0],[0,-d],[0,d]]){
-        const xx=x+dx,yy=y+dy;if(xx<0||xx>=width||yy<0||yy>=height)continue;
-        const n=yy*width+xx;if(!leafMask[n]){fixed.data.set(original.data.subarray(n*4,n*4+4),(y*width+x)*4);break search;}
-      }
-    }
-    ctx.putImageData(fixed,0,0);fc.putImageData(leaves,0,0);
-    const water=canvas(56*scale,74*scale),wc=water.getContext('2d'),pixels=wc.createImageData(water.width,water.height);
-    for(let y=160*scale;y<234*scale;y++)for(let x=424*scale;x<width;x++)if(waterMask[y*width+x]){
-      const i=(y*width+x)*4;pixels.data.set(original.data.subarray(i,i+4),((y-160*scale)*water.width+x-424*scale)*4);
-    }
-    wc.putImageData(pixels,0,0);
-    return sceneryLayers={image,base,foliage,water,flow:canvas(water.width,water.height),scale};
+    const foliageImage=images['v2-environment-foliage'],waterImage=images['v2-environment-water'];
+    if(!foliageImage||!waterImage)return null;
+    // Cache decoded layers for consistent compositing in both renderer paths.
+    // No pixel readback or mask generation is needed on the browser thread.
+    const copy=source=>{const a=document.createElement('canvas');a.width=source.width;a.height=source.height;a.getContext('2d').drawImage(source,0,0);return a;};
+    const base=copy(image),foliage=copy(foliageImage),water=copy(waterImage);
+    const flow=document.createElement('canvas');flow.width=water.width;flow.height=water.height;
+    return sceneryLayers={image,base,foliage,water,flow,scale:image.width/480};
   }
   function wind(time,phase=0){
     return (Math.sin(time*.9+phase)-Math.sin(phase))*(.7+.3*Math.sin(time*.23)**2);
@@ -204,7 +185,8 @@
   }
   function animatedScenery(c,image,time){
     time=Math.max(0,time);
-    const layers=splitScenery(image);c.drawImage(layers.base,0,0,480,304);
+    const layers=splitScenery(image);c.drawImage(layers?layers.base:image,0,0,480,304);
+    if(!layers)return;
     // One intact canopy layer receives one displacement. Never split a crown
     // into bands with different offsets: that tears branches and leaf silhouettes.
     c.drawImage(layers.foliage,Math.round(wind(time)),0,480,304);
