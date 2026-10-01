@@ -6,24 +6,19 @@
   function box(c,x,y,w,h,color){c.fillStyle=color;c.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));}
   function poly(c,points,color){c.fillStyle=color;c.beginPath();points.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();c.fill();}
   function houseRect(p,plan){return [(plan.modular?root.TownModules.origin(plan):O)+p.x*G,Y-(p.y+p.h)*G,p.w*G,p.h*G];}
-  function siteScale(s){
-    const plan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint);
-    return plan?.artStyle==='creek-v2'?1.8:1;
-  }
+  const worksite=s=>root.TownConstructionConfig.site(s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint));
+  const siteScale=s=>worksite(s).view.scale;
   function project(s,x,y){
-    const k=siteScale(s);return k===1?[x,y]:[247+(x-328)*k,184+(y-272)*k];
+    const {scale,anchor,display}=worksite(s).view;
+    return [display[0]+(x-anchor[0])*scale,display[1]+(y-anchor[1])*scale];
   }
-  function siteTransform(c,s){const k=siteScale(s);if(k!==1){const [x,y]=project(s,0,0);c.translate(x,y);c.scale(k,k);}}
+  function siteTransform(c,s){const [x,y]=project(s,0,0);c.translate(x,y);c.scale(siteScale(s),siteScale(s));}
   function travelX(s,x){
-    if(siteScale(s)===1)return x;
-    const left=project(s,260,272)[0],right=project(s,392,272)[0];
-    const anchors=[[0,0],[35,30],[90,90],[110,120],[148,180],[185,132],[260,left],[392,right],[418,388],[430,442],[480,480]];
-    let display=project(s,x,272)[0];
-    if(x<260||x>392){
-      const index=Math.max(1,anchors.findIndex(a=>a[0]>=x)),[a,b]=[anchors[index-1],anchors[index]];
-      display=a[1]+(x-a[0])*(b[1]-a[1])/(b[0]-a[0]);
-    }
-    return 328+(display-247)/1.8;
+    const {scale,anchor,display,travel}=worksite(s).view;
+    if(travel.length<2)return x;
+    const index=Math.min(travel.length-1,Math.max(1,travel.findIndex(a=>a[0]>=x))),[a,b]=[travel[index-1],travel[index]];
+    const mapped=a[1]+(x-a[0])*(b[1]-a[1])/(b[0]-a[0]);
+    return anchor[0]+(mapped-display[0])/scale;
   }
   function renderLayer(p,plan){
     if(plan.wholeTimber&&(p.tileSource||p).kind==='chinking')return 1.5;
@@ -85,12 +80,13 @@
   }
   function stock(c,s){
     const amounts=root.TownEngine.inventory(s);const colors={W:'#a8794c',S:'#89939a',C:'#ca8063',B:'#8d7850',D:'#947050'};
-    for(const [i,k] of (s.plan?.wilderness?['W','S','B','D']:['W','S','C']).entries()){
+    for(const [i,k] of Object.keys(s.plan?.costs||{W:0,S:0,C:0}).filter(k=>(s.plan?.costs[k]||0)>0||['W','S','C'].includes(k)).entries()){
       const pose=root.TownCutawayMotion?.accepts(s.active)?root.TownCutawayMotion.sample(s.active):null;
       const taken=pose?.team?(k==='W'&&pose.log?s.active.materialIds.length:0):pose?s.active.materialKinds.filter((kind,j)=>kind===k&&(j<pose.unit||(j===pose.unit&&pose.held))).length:0;
-      const x=({W:56,S:95,C:134,B:134,D:173})[k],n=amounts.free[k]+amounts.reserved[k]-taken;
-      if(k==='W'&&s.plan?.wholeTimber){
-        for(let j=0;j<Math.min(3,Math.ceil(n/2));j++)root.TownWildernessArt.timberOverlay(c,{log:{x:travelX(s,110),y:268.8-j*6.4,length:80,diameter:6.4}},s.time);
+      const x=worksite(s).piles[k]-12,n=amounts.free[k]+amounts.reserved[k]-taken;
+      const timber=s.plan?.parts.find(p=>p.buildAction==='timber-lift');
+      if(k==='W'&&timber){
+        for(let j=0;j<Math.min(3,Math.ceil(n/2));j++)root.TownPetWorkArt.timberOverlay(c,{log:{x:travelX(s,worksite(s).timberPile),y:worksite(s).ground-timber.longTimber.diameter/2-j*timber.longTimber.diameter,...timber.longTimber}},s.time,x=>x,worksite(s).view.logTexture);
         continue;
       }
       for(let j=0;j<Math.min(4,Math.ceil(n/4));j++){
@@ -119,7 +115,7 @@
     c.restore();
   }
   function drawPart(c,p,plan,time=0){
-    if(p.longTimber){const [x,y,w,h]=houseRect(p,plan);root.TownWildernessArt.installedLog(c,p,x,y,w,h);return;}
+    if(p.longTimber){const [x,y,w,h]=houseRect(p,plan);root.TownPetWorkArt.installedLog(c,p,x,y,w,h,root.TownConstructionConfig.site(plan).view);return;}
     if(p.tileSource){
       const [x,y]=houseRect(p,plan);
       c.save();c.beginPath();c.rect(x,y,G,G);c.clip();
@@ -378,9 +374,9 @@
     const wilderness=environmentPlan?.wilderness;
     if(wilderness)root.TownWildernessArt.environment(c,s,time);
     else {if(!retreat||!root.TownCottageArt?.environment(c))ground(c,time);scenery(c,time,retreat);}
-    if(!preview){c.save();if(siteScale(s)!==1)c.translate(0,-88);stock(c,s);c.restore();}
+    if(!preview){c.save();c.translate(0,worksite(s).view.stockOffsetY||0);stock(c,s);c.restore();}
     c.save();siteTransform(c,s);
-    if(wilderness)root.TownWildernessArt.trees(c,s,time,x=>travelX(s,x),preview);
+    root.TownPetWorkArt.trees(c,s,time,x=>travelX(s,x),preview);
     chimneySmoke(c,s,time,preview);
     const plan=s.plan;if(plan){
       const style=plan.modular?{...plan,layout:plan.recipe.budget.S>plan.recipe.budget.W?'stone':'wood'}:plan;
@@ -398,7 +394,7 @@
     }
     if(!retreat&&!wilderness)shrubs(c,time);
     root.TownCutawayLighting?.drawEmitters(c,s,time,preview);
-    if(preview&&wilderness){pet(c,{x:265,y:272},1,0,'B',false,true);}
+    if(preview&&worksite(s).view.previewPets?.length){for(const p of worksite(s).view.previewPets)pet(c,p,p.index,0,p.held||null,false,true);}
     else if(preview&&s.plan?.artStyle?.startsWith('woodland-')){
       pet(c,{x:230,y:256},0,0,null,false,true);
     }else if(preview&&s.plan?.residential){
@@ -425,20 +421,20 @@
         }
         }
       }
-      const gathering=wilderness?root.TownWildGather.sample(s.wilderness):null;
+      const gathering=root.TownWildGather?.sample(s.wilderness);
       const pair=gathering?.whole?gathering:pose?.whole?pose:null;
       const center=pair?.pets.reduce((n,p)=>n+p.x,0)/2;
       // Project the shared center once so the full log and both end grips stay rigid.
       const petX=x=>pair?travelX(s,center)+x-center:travelX(s,x);
-      // Stand at the basin's front-left rim, 60 scene pixels below the house's ground line.
-      const mudDrop=pose?.mud?(pose.mixDepth||0)*60/siteScale(s):0;
+      // Foreground depth is authored in display pixels.
+      const mudDrop=pose?.mud?(pose.mixDepth||0)*worksite(s).view.mudDepth/siteScale(s):0;
       for(let i=0;i<2;i++)pet(c,{...s.pets[i],x:petX(s.pets[i].x),y:s.pets[i].y+(i===a?.workers[0]?mudDrop:0)},i,t,
-        gathering?.team?null:i===1&&gathering?gathering.held:
+        gathering?.team?null:i===(s.wilderness?.active?.worker??1)&&gathering?gathering.held:
         a&&a.workers.includes(i)?pose?pose.held:['carry','climb'].includes(a.phase)?a.part.material:null:null,
         a&&a.workers.includes(i)&&(pose?pose.hammer:a.phase==='install'),!s.plan||!!s.plan.residential);
-      if(wilderness)root.TownWildernessArt.gatherOverlay(c,s,t,x=>travelX(s,x));
-      if(pose?.team)root.TownWildernessArt.timberOverlay(c,pose,t,x=>travelX(s,x));
-      if(pose?.mud)root.TownWildernessArt.mudOverlay(c,{...pose,y:pose.y+mudDrop},t,x=>travelX(s,x));
+      if(gathering)root.TownPetWorkArt.gatherOverlay(c,s,t,x=>travelX(s,x),worksite(s).view.logTexture);
+      if(pose?.team)root.TownPetWorkArt.timberOverlay(c,{...pose,ground:worksite(s).ground},t,x=>travelX(s,x),worksite(s).view.logTexture);
+      if(pose?.mud)root.TownPetWorkArt.mudOverlay(c,{...pose,y:pose.y+mudDrop},t,x=>travelX(s,x));
     }
     c.restore();c.restore();
   }

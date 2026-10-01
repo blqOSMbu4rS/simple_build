@@ -6,6 +6,7 @@
   const ART=typeof module!=='undefined'&&module.exports?require('./art-layout.js'):root.TownArtLayout;
   const BLUEPRINTS=typeof module!=='undefined'&&module.exports?require('./blueprints.js'):root.TownBlueprints;
   const GATHER=typeof module!=='undefined'&&module.exports?require('./wilderness-gather.js'):root.TownWildGather;
+  const CONFIG=typeof module!=='undefined'&&module.exports?require('./construction-config.js'):root.TownConstructionConfig;
   const KINDS = ['W', 'S', 'C'], MATERIAL_KINDS=[...KINDS,'B','D'];
   const LABELS = { W: '木材', S: '石材', C: '布料', B: '树枝 / 干草', D: '泥土' };
   const GRID = 16, GROUND = 272, ORIGIN = 240;
@@ -149,7 +150,7 @@
   function start(s) {
     if(s.status!=='idle'&&s.status!=='waiting')return false;
     if(!s.plan&&s.blueprint==='modular'){s.plan=preview(s);s.status='building';s.paused=false;s.startedAt=s.time;s.dirty=false;note(s,'构件组合已确定，开始逐件搭建；缺料时会等你补齐。');return true;}
-    if(!s.plan&&s.blueprint){s.plan=clone(BLUEPRINTS.find(p=>p.id===s.blueprint)||BLUEPRINTS[0]);GATHER?.create(s);s.status='building';s.paused=false;s.startedAt=s.time;s.dirty=false;note(s,'按图纸开工：缺少材料时会停下来等你。');return true;}
+    if(!s.plan&&s.blueprint){s.plan=clone(BLUEPRINTS.find(p=>p.id===s.blueprint)||BLUEPRINTS[0]);CONFIG.validate(s.plan);GATHER?.create(s);s.status='building';s.paused=false;s.startedAt=s.time;s.dirty=false;note(s,'按图纸开工：缺少材料时会停下来等你。');return true;}
     s.status='waiting';s.paused=false;s.startedAt=s.time;replan(s);
     if(s.plan)note(s,'开工啦！先整理材料，慢慢打好地基。');return !!s.plan;
   }
@@ -157,7 +158,7 @@
     return c.label||({masonry:'砌筑石墙模块',plaster:'安装半木墙面',archdoor:'安装拱形门',cornice:'安装塔楼檐口',steeproof:'拼装尖顶',roofhalf:'铺设屋顶坡面',flag:'升起旗帜',crest:'安装城堡纹章',battlement:'砌筑城垛',dormer:'安装老虎窗',chimney:'砌筑烟囱',shutters:'安装木百叶窗',awning:'安装门口遮阳篷',clock:'安装木制钟面',base:'铺设地基',post:'竖起立柱',beam:'两人合抬横梁',wall:'安装墙面',gable:'拼装山墙',roof:'铺设斜屋面',ridge:'合拢屋脊',flat:'铺设盖顶',canopy:'两人展开布篷',deck:'安装楼板',ladder:'固定上层梯子',sign:'挂上木招牌',banner:'挂好布饰',step:'摆放入口石阶'})[c.kind];
   }
   function beginTask(s,c) {
-    const timber=MOT?.isTimber(s.plan,c);
+    const site=CONFIG.site(s.plan),timber=MOT?.isTimber(s.plan,c);
     // Finish a collector's current delivery before asking the same pet to lift timber.
     if(s.wilderness?.active&&(s.wilderness.active.team||timber))return;
     if(s.plan.template){
@@ -173,8 +174,8 @@
     if(MATERIAL_KINDS.some(k=>stock.filter(m=>m.kind===k).length!==(c.cost[k]||0)))throw Error('Missing reserved material');
     for(const m of stock)m.state='hard'; // Dedicated shaping begins at claim: irreversible and atomic.
     if(s.plan.cutaway){
-      const target={x:ORIGIN+(c.x+c.w/2)*GRID-(timber?0:12),y:Math.min(GROUND,GROUND-c.y*GRID)};
-      s.active=MOT.create(c,stock,s.pets,s.plan.wilderness?0:hash(c.id)%2,target,timber,MOT.isChinking(s.plan,c));
+      const target=CONFIG.target(s.plan,c);
+      s.active=MOT.create(c,stock,s.pets,site.gathering?1-site.gathering.worker:hash(c.id)%2,target,timber,MOT.isChinking(s.plan,c),site);
       note(s,taskLabel(c)+(timber?' · 两人抬木，到墙下再抬升对齐':s.plan.gridBuild?' · 搬一块，建一格':' · 每次搬一块，搬齐后敲打建造'));return;
     }
     const target=(s.plan.modular?MOD.workPoint(s.plan,c):ART.workPoint(s.plan,c.id))||{x:ORIGIN+(c.x+c.w/2)*GRID,y:Math.min(GROUND,GROUND-c.y*GRID)};
@@ -248,7 +249,7 @@
     }
     if(list.some(c=>!done.has(c.id)))throw Error('Construction dependency deadlock');
     if(s.status==='building') {replan(s);if(s.plan.parts.some(c=>!done.has(c.id)))return;finishPlan(s);}
-    else {s.status='done';s.completedAt=s.time;s.pets=s.plan.wilderness?[{x:280,y:GROUND},{x:328,y:GROUND}]:[{x:ORIGIN+32,y:GROUND-16},{x:ORIGIN+55,y:GROUND-16}];note(s,'小屋完工啦。坐一会儿，再去下一块空地吧。');}
+    else {s.status='done';s.completedAt=s.time;s.pets=CONFIG.site(s.plan).rest;note(s,'小屋完工啦。坐一会儿，再去下一块空地吧。');}
   }
   function next(s) {
     if(s.status!=='done')return false;
@@ -270,7 +271,7 @@
     const ids=new Set();for(const m of s.materials){if(!Number.isInteger(m.id)||ids.has(m.id)||!MATERIAL_KINDS.includes(m.kind)||!['free','soft','hard','installed'].includes(m.state))throw Error('材料账本损坏');ids.add(m.id);}
     if(!Number.isInteger(s.nextMaterial)||s.materials.some(m=>m.id>=s.nextMaterial))throw Error('材料编号损坏');
     if(s.plan) {
-      const definition=canonical(s.plan);if(!definition||JSON.stringify(definition)!==JSON.stringify(s.plan))throw Error('建筑方案损坏');
+      CONFIG.validate(s.plan);const definition=canonical(s.plan);if(!definition||JSON.stringify(definition)!==JSON.stringify(s.plan))throw Error('建筑方案损坏');
     } else if(['building','finishing','done'].includes(s.status))throw Error('缺少建筑方案');
     const definitions=[...(s.plan?s.plan.parts:[]),...s.decorations];
     const currentIds=new Set();
@@ -286,8 +287,10 @@
       const a=s.active;
       if(a.motion!==undefined&&(!s.plan.cutaway||!MOT?.accepts(a)))throw Error('未知施工动作版本');
       if(MOT?.accepts(a)){
+        if((a.motion===MOT.VERSION&&CONFIG.action(a.part)!=='install')||(a.motion===MOT.LONG_VERSION&&CONFIG.action(a.part)!=='timber-lift')||(a.motion===MOT.TEAM_VERSION&&CONFIG.action(a.part)!=='team-lift'))throw Error('施工动作不匹配');
         if(MOT.isTeam(a)&&!MOT.isTimber(s.plan,a.part))throw Error('合抬图纸损坏');
         if(a.motion===MOT.MUD_VERSION&&!MOT.isChinking(s.plan,a.part))throw Error('泥封图纸损坏');
+        if(JSON.stringify(a.site)!==JSON.stringify(CONFIG.site(s.plan))||JSON.stringify(a.target)!==JSON.stringify(CONFIG.target(s.plan,a.part)))throw Error('施工工地配置损坏');
         MOT.validate(a,s.materials);
       }
       if(!Array.isArray(a.durations)||(!MOT?.accepts(a)&&a.durations.length!==6)||a.durations.some(n=>!Number.isFinite(n)||n<0||n>120)||!Number.isFinite(a.total)||Math.abs(a.durations.reduce((x,y)=>x+y,0)-a.total)>.001)throw Error('施工时间损坏');

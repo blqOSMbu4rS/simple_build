@@ -55,10 +55,10 @@
     $('message').textContent=action?(state.paused?'已暂停 · ':'')+(action.mud&&mudLabels[action.phase]||actionLabels[action.phase])+' · '+state.active.part.label+' · 已送达 '+action.delivered+'/'+state.active.materialIds.length:state.message;
     $('cost').textContent='总用料 '+Object.entries(plan.costs).filter(([,n])=>n).map(([k,n])=>`${E.LABELS[k]} ${n}`).join(' · ')+(state.missing?' · 当前缺 '+Object.entries(state.missing.amounts).map(([k,n])=>`${E.LABELS[k]} ${n}`).join('、'):'');
     for(const k of E.MATERIAL_KINDS)$('stock-'+k).textContent=inv.free[k]+inv.reserved[k];
-    $('play').textContent=state.status==='done'?'下一块空地 →':state.paused?'继续建造 ▶':state.status==='building'||state.status==='finishing'?'暂停 Ⅱ':state.status==='waiting'?(state.plan?.wilderness?'暂停采集 Ⅱ':'等待材料 · 继续'):'开始建造 ▶';
+    $('play').textContent=state.status==='done'?'下一块空地 →':state.paused?'继续建造 ▶':state.status==='building'||state.status==='finishing'?'暂停 Ⅱ':state.status==='waiting'?(TownConstructionConfig.site(state.plan).gathering?'暂停采集 Ⅱ':'等待材料 · 继续'):'开始建造 ▶';
     $('speed').value=String(state.speed);
-    const wild=!!plan.wilderness,g=state.wilderness,pose=TownWildGather.sample(g);
-    document.querySelectorAll('[data-material]').forEach(b=>{b.hidden=wild||['B','D'].includes(b.dataset.material);});
+    const wild=!!TownConstructionConfig.site(plan).gathering,g=state.wilderness,pose=TownWildGather.sample(g);
+    document.querySelectorAll('[data-material]').forEach(b=>{b.hidden=!(plan.costs[b.dataset.material]>0)||(wild&&TownWildGather.kinds.includes(b.dataset.material));});
     document.querySelectorAll('[data-gather]').forEach(b=>{b.hidden=!wild;b.disabled=!g||state.status==='done'||state.paused;});
     $('auto-gather').hidden=!wild;$('auto-gather').disabled=!g||state.status==='done';
     $('auto-gather').textContent='自动采集：'+(g?.auto===false?'关':'开');
@@ -66,7 +66,7 @@
     $('supply-heading').textContent=wild?'02 / 就地取材，一点点搭建':'02 / 撒材料，看它们搭建';
     $('supply-hint').textContent=wild?'开工后自动采集；也可关闭自动，逐次指定取材':'缺料时现场会保留，补齐后继续';
     const phases={descend:'返回地面',source:'前往材料来源',chop:pose?.team?'两人合作砍树':'砍伐取木',fell:'退开，树木倒下',trim:'修枝整理倒木',cut:pose?.team?'两人拉锯截取圆木':'截成短木',
-      'collect-stone':'挑选溪石','collect-branch':'整理树枝与干草',dig:'挖取泥土',water:'前往溪边提水',
+      'collect-stone':'收集石料','collect-branch':'整理树枝与干草',dig:'挖取泥土',water:'前往水源提水',
       'fill-water':'装水', 'return-water':'把水提回和泥盆',mix:'搅拌和泥','gather-carry':'搬回料堆',stock:'放好一份材料',
       pickup:'拿起截好的木料','team-pickup':'两人抬起截好的圆木','team-carry':'两人把圆木搬回料堆'};
     $('gather-status').hidden=!wild;
@@ -91,9 +91,9 @@
   $('auto-gather').onclick=()=>{if(state.wilderness)state.wilderness.auto=!state.wilderness.auto;update();persist();};
   $('fill').onclick=()=>{
     if(state.status==='done')return;
-    if((state.plan||plans[selected]).wilderness){if(!state.plan)E.start(state);state.wilderness.auto=true;update();persist();return;}
+    if(TownConstructionConfig.site(state.plan||plans[selected]).gathering){if(!state.plan)E.start(state);state.wilderness.auto=true;update();persist();return;}
     const plan=state.plan||plans[selected],inv=E.inventory(state);
-    for(const k of E.KINDS){
+    for(const k of E.MATERIAL_KINDS){
       const committed=state.installed.reduce((n,p)=>n+(p.cost[k]||0),0)+(state.active?.part.cost[k]||0);
       let need=plan.costs[k]-committed-inv.free[k]-inv.reserved[k];
       while(need>0){const n=Math.min(100,need,240-state.materials.filter(m=>m.kind===k&&m.state!=='installed').length);if(n<=0||!E.addMaterials(state,k,n))break;need-=n;}
@@ -103,7 +103,7 @@
   $('play').onclick=()=>{
     if(state.status==='done'){E.next(state);state.blueprint=plans[selected].id;resetView();}
     else if(state.status==='building'||state.status==='finishing')state.paused=!state.paused;
-    else if(state.status==='waiting'){state.paused=state.plan?.wilderness?!state.paused:false;}
+    else if(state.status==='waiting'){state.paused=TownConstructionConfig.site(state.plan).gathering?!state.paused:false;}
     else{state.blueprint=plans[selected].id;E.start(state);}
     update();persist();
   };

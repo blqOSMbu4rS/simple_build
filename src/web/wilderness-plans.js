@@ -51,6 +51,16 @@
     longTimber:{length:80,diameter:6.4},tileSource:source,label:'安装第 '+(i+1)+' 根完整圆木'}));
   timber.parts=timber.parts.flatMap(p=>p.id===oldLogs[0].id?courses:oldLogs.some(l=>l.id===p.id)?[]:[p]);
   for(const p of timber.parts)p.deps=[...new Set(p.deps.flatMap(id=>oldLogs.some(l=>l.id===id)?courses.map(c=>c.id):[id]))];
+  for(const plan of [timber,current,v2,legacy]){
+    plan.construction={view:{previewPets:[{x:265,y:272,index:1,held:'B'}]},rest:[{x:280,y:272},{x:328,y:272}],
+      gathering:{worker:1,multiplier:2,sources:{W:35,S:418,B:90,D:110},water:430,mix:148,
+        trees:[timber,current].includes(plan)?[25,58,91,124]:[]}};
+    if(plan.artStyle==='creek-v2')plan.construction.view={previewPets:[{x:265,y:272,index:1,held:'B'}],scale:1.8,anchor:[328,272],display:[247,184],mudDepth:60,logTexture:"timber-log",timberEdgeTexture:"v2-side",timberEdgeWidth:7,stockOffsetY:-88,trees:{textures:["timber-tree0","timber-tree1","timber-tree2"],heights:[88,94,90,92],stump:"timber-stump",fallen:"timber-fallen"},
+      travel:[[0,0],[35,30],[90,90],[110,120],[148,180],[185,132],[260,124.6],[392,362.2],[418,388],[430,442],[480,480]]};
+    for(const part of plan.parts){
+      part.buildAction=part.longTimber?'timber-lift':plan===current&&part.tileSource.id==='logs'?'team-lift':plan===timber&&part.tileSource.id==='chinking'?'seal':'install';
+    }
+  }
   if(typeof module!=='undefined'&&module.exports)module.exports=timber;
   else root.TownBlueprints.push(timber,current,v2,legacy);
 })(globalThis);
