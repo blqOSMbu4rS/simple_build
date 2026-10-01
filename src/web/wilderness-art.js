@@ -140,6 +140,32 @@
     }else box(c,x+2,y+4,w-4,h-5,'#73543a');
   }
   let sceneryLayers;
+  const treeLeaves=new WeakMap();
+  function leafClusters(source,spots){
+    const still=document.createElement('canvas');still.width=source.width;still.height=source.height;
+    const fixed=still.getContext('2d');fixed.drawImage(source,0,0);
+    const patches=spots.map(([cx,cy,rx,ry])=>{
+      const x=Math.round(cx-rx),y=Math.round(cy-ry),image=document.createElement('canvas');
+      image.width=Math.ceil(rx*2);image.height=Math.ceil(ry*2);const p=image.getContext('2d');
+      // Small irregular leaf silhouettes, copied once with crisp pixel edges.
+      // Every extracted cluster subsequently moves as one intact sprite.
+      for(let row=0;row<image.height;row++){
+        const v=(row+.5)/ry-1,radius=Math.sqrt(Math.max(0,1-v*v))*rx*(.9+.1*Math.sin(row*1.7));
+        const left=Math.ceil(rx-radius),w=Math.max(0,Math.floor(rx+radius)-left);
+        if(w){p.drawImage(source,x+left,y+row,w,1,left,row,w,1);fixed.clearRect(x+left,y+row,w,1);}
+      }
+      return {image,x,y};
+    });
+    return {still,patches};
+  }
+  function drawLeafClusters(c,group,time,scale=1,phase=0){
+    c.drawImage(group.still,0,0);
+    for(const [i,p]of group.patches.entries()){
+      const t=phase+i*.73,dx=Math.round(wind(time,t)*scale*.65);
+      const dy=Math.round((Math.sin(time*.8+t)-Math.sin(t))*scale*.2);
+      c.drawImage(p.image,p.x+dx,p.y+dy);
+    }
+  }
   function splitScenery(image){
     if(sceneryLayers?.image===image)return sceneryLayers;
     const foliageImage=images['v2-environment-foliage'],waterImage=images['v2-environment-water'];
@@ -147,9 +173,12 @@
     // Cache decoded layers for consistent compositing in both renderer paths.
     // No pixel readback or mask generation is needed on the browser thread.
     const copy=source=>{const a=document.createElement('canvas');a.width=source.width;a.height=source.height;a.getContext('2d').drawImage(source,0,0);return a;};
-    const base=copy(image),foliage=copy(foliageImage),water=copy(waterImage);
+    const base=copy(image),water=copy(waterImage),scale=image.width/480;
+    const foliage=leafClusters(foliageImage,[[20,14,5,4],[68,25,5,4],[106,38,6,4],[128,77,5,4],
+      [189,47,5,4],[208,104,6,4],[229,130,5,3],[266,121,5,3],[328,140,5,3],
+      [374,119,5,4],[404,146,6,4],[460,91,5,4]].map(spot=>spot.map(n=>n*scale)));
     const flow=document.createElement('canvas');flow.width=water.width;flow.height=water.height;
-    return sceneryLayers={image,base,foliage,water,flow,scale:image.width/480};
+    return sceneryLayers={image,base,foliage,water,flow,scale};
   }
   function wind(time,phase=0){
     return (Math.sin(time*.9+phase)-Math.sin(phase))*(.7+.3*Math.sin(time*.23)**2);
@@ -187,9 +216,9 @@
     time=Math.max(0,time);
     const layers=splitScenery(image);c.drawImage(layers?layers.base:image,0,0,480,304);
     if(!layers)return;
-    // One intact canopy layer receives one displacement. Never split a crown
-    // into bands with different offsets: that tears branches and leaf silhouettes.
-    c.drawImage(layers.foliage,Math.round(wind(time)),0,480,304);
+    // Most foliage is stationary; only sparse small leaf clusters respond to wind.
+    c.save();c.scale(1/layers.scale,1/layers.scale);
+    drawLeafClusters(c,layers.foliage,time,layers.scale);c.restore();
     flowingWater(c,layers,time);
     // Sparse leaves travel from the canopy and fade before reaching the worksite.
     for(let i=0;i<6;i++){
@@ -239,10 +268,15 @@
   function standingTree(c,x,y,index,time=0,angle=0){
     const image=images['timber-tree'+(index%3)];
     if(image){
-      c.save();c.translate(x,y);c.rotate(angle||wind(time,index*.8)*.012);
+      c.save();c.translate(x,y);c.rotate(angle);
       const h=[88,94,90,92][index],w=h*image.width/image.height;
-      // Rotate the entire tree about its root, including an intact crown/trunk.
-      c.drawImage(image,-w/2,-h,w,h);c.restore();return;
+      if(angle)c.drawImage(image,-w/2,-h,w,h);
+      else{
+        if(!treeLeaves.has(image))treeLeaves.set(image,leafClusters(image,
+          [[.45,.25,.07,.025],[.23,.4,.07,.025],[.8,.45,.07,.025]].map(([cx,cy,rx,ry])=>[cx*image.width,cy*image.height,rx*image.width,ry*image.height])));
+        c.translate(-w/2,-h);c.scale(w/image.width,h/image.height);
+        drawLeafClusters(c,treeLeaves.get(image),time,image.height/h,index*.8);
+      }c.restore();return;
     }
     c.save();c.translate(x,y);c.rotate(angle);
     const height=[42,49,38,45][index];
