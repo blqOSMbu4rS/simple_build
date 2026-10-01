@@ -81,7 +81,7 @@
     R.draw(canvas,{...state,plan:p,installed:p.parts},0,true);
     button.onclick=()=>{if(state.status!=='idle')return;selected=i;state.blueprint=p.id;resetView();update();persist();};
   }
-  Promise.all([TownCottageArt.ready,TownWildernessArt.ready]).then(()=>{
+  Promise.all([TownCottageArt.ensure(state.plan||plans[selected]),TownWildernessArt.ensure(state.plan||plans[selected])]).then(()=>{
     document.querySelectorAll('.card canvas').forEach((canvas,i)=>R.draw(canvas,{...state,plan:plans[i],installed:plans[i].parts},0,true));
   });
   for(const button of document.querySelectorAll('[data-material]'))button.onclick=()=>{E.addMaterials(state,button.dataset.material,{W:8,S:6,C:2}[button.dataset.material]);update();persist();};

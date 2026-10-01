@@ -1,12 +1,17 @@
 /* Separate sprites, geology and source animation; installed tiles own the house. */
 (function(root){
   'use strict';
-  const images={},api={draw,environment,trees,gatherOverlay,timberOverlay,installedLog,windowPanes,revision:0};
-  const sources={...root.TownWildernessAssets,...Object.fromEntries(Object.entries({...root.TownWildernessAssetsV2,...root.TownWildernessAssetsV4,...root.TownWildernessAssetsV5,...root.TownWildernessAssetsV6}).map(([k,v])=>['v2-'+k,v])),...Object.fromEntries(Object.entries(root.TownWildernessTimber||{}).map(([k,v])=>['timber-'+k,v]))};
-  api.ready=Promise.all(Object.entries(sources).map(([key,url])=>new Promise(resolve=>{
+  const images={},api={draw,environment,trees,gatherOverlay,timberOverlay,installedLog,windowPanes,ensure,revision:0};
+  const sources={...Object.fromEntries(Object.entries({...root.TownWildernessAssetsV2,...root.TownWildernessAssetsV4,...root.TownWildernessAssetsV5,...root.TownWildernessAssetsV6}).map(([k,v])=>['v2-'+k,v])),...Object.fromEntries(Object.entries(root.TownWildernessTimber||{}).map(([k,v])=>['timber-'+k,v]))};
+  function load(sources){return Promise.all(Object.entries(sources).map(([key,url])=>typeof Image==='undefined'?Promise.resolve(false):new Promise(resolve=>{
     const image=new Image();image.onload=()=>{images[key]=image;api.revision++;resolve(true);};
     image.onerror=()=>resolve(false);image.src=url;
-  })));
+  }))).then(results=>results.every(Boolean));}
+  api.ready=load(sources);
+  let legacyReady;
+  function loadLegacy(){return legacyReady||(legacyReady=load(root.TownWildernessAssets||{}));}
+  function ensure(plan){return plan?.wilderness&&plan.artStyle!=='creek-v2'?
+    Promise.all([api.ready,loadLegacy()]).then(results=>results.every(Boolean)):api.ready;}
   const box=(c,x,y,w,h,color)=>{c.fillStyle=color;c.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));};
   function stones(c,x,y,w,h){
     c.save();c.beginPath();c.rect(x,y,w,h);c.clip();
@@ -82,6 +87,7 @@
   }
   function draw(c,p,x,y,w,h,time=0,plan){
     if(plan?.artStyle==='creek-v2'){drawV2(c,p,x,y,w,h,time);return;}
+    loadLegacy();
     const kind=p.kind;
     if(kind==='wall'){
       if(images.wall)c.drawImage(images.wall,x,y,w,h);else box(c,x,y,w,h,'#735039');
@@ -125,6 +131,7 @@
   }
   function environment(c,s,time=0){
     const latest=(s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint))?.artStyle==='creek-v2';
+    if(!latest)loadLegacy();
     if(latest&&images['v2-environment']){
       // Keep the whole background visible; the scene projection places the shelter.
       c.drawImage(images['v2-environment'],0,0,480,304);

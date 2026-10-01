@@ -11,7 +11,7 @@
   const frontRegions={shelf:[59,14,393,493],table:[476,143,449,356],chair:[950,127,332,376],
     bench:[46,606,557,239],cabinet:[620,515,292,333],plant:[954,507,337,341],
     curtains:[66,859,518,337],'wall-shelf':[706,851,541,347]};
-  const api={draw,environment,lampAnchor,revision:0};
+  const api={draw,environment,lampAnchor,ensure,revision:0};
   // Flame coordinates are authored in the independent furniture atlas. Keep
   // presentation anchors separate from the immutable construction/save plan.
   function lampAnchor(plan,source){
@@ -33,13 +33,22 @@
     image.src=source;
   });}
   api.ready=Promise.all([
-    loadImage(root.TownCottageAtlas,image=>{atlas=image;}),
-    loadImage(root.TownCottageRoof,image=>{roofImage=image;}),
-    loadImage(root.TownCottageWall,image=>{wallImage=image;}),
-    loadImage(root.TownCottageSectionRoof,image=>{sectionRoof=image;}),
     loadImage(root.TownCottageFrontAtlas,image=>{frontAtlas=image;}),
     loadImage(root.TownCottageForest,image=>{forest=image;})
   ]).then(results=>results.every(Boolean));
+  let legacyReady;
+  function loadLegacy(){
+    return legacyReady||(legacyReady=Promise.all([
+      loadImage(root.TownCottageAtlas,image=>{atlas=image;}),
+      loadImage(root.TownCottageRoof,image=>{roofImage=image;}),
+      loadImage(root.TownCottageWall,image=>{wallImage=image;}),
+      loadImage(root.TownCottageSectionRoof,image=>{sectionRoof=image;})
+    ]).then(results=>results.every(Boolean)));
+  }
+  function ensure(plan){
+    return ['woodland-v1','woodland-v2'].includes(plan?.artStyle)?
+      Promise.all([api.ready,loadLegacy()]).then(results=>results.every(Boolean)):api.ready;
+  }
   function sprite(c,kind,x,y,w,h){
     const r=regions[kind],scale=Math.min(w/r[2],h/r[3]);
     const dw=Math.round(r[2]*scale*2)/2,dh=Math.round(r[3]*scale*2)/2;
@@ -137,6 +146,7 @@
     return false;
   }
   function draw(c,p,x,y,w,h){
+    if(p.appearance!=='retreat-v3')loadLegacy();
     c.save();c.translate(x,y);
     if(p.appearance==='retreat-v3'&&retreat(c,p,w,h)){c.restore();return;}
     if(p.kind==='roof'&&p.appearance==='section-v2'&&sectionRoof){
