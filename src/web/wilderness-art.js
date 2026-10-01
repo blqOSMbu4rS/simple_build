@@ -1,8 +1,8 @@
 /* Separate sprites, geology and source animation; installed tiles own the house. */
 (function(root){
   'use strict';
-  const images={},api={draw,environment,trees,gatherOverlay,timberOverlay,windowPanes,revision:0};
-  const sources={...root.TownWildernessAssets,...Object.fromEntries(Object.entries({...root.TownWildernessAssetsV2,...root.TownWildernessAssetsV4,...root.TownWildernessAssetsV5,...root.TownWildernessAssetsV6}).map(([k,v])=>['v2-'+k,v]))};
+  const images={},api={draw,environment,trees,gatherOverlay,timberOverlay,installedLog,windowPanes,revision:0};
+  const sources={...root.TownWildernessAssets,...Object.fromEntries(Object.entries({...root.TownWildernessAssetsV2,...root.TownWildernessAssetsV4,...root.TownWildernessAssetsV5,...root.TownWildernessAssetsV6}).map(([k,v])=>['v2-'+k,v])),...Object.fromEntries(Object.entries(root.TownWildernessTimber||{}).map(([k,v])=>['timber-'+k,v]))};
   api.ready=Promise.all(Object.entries(sources).map(([key,url])=>new Promise(resolve=>{
     const image=new Image();image.onload=()=>{images[key]=image;api.revision++;resolve(true);};
     image.onerror=()=>resolve(false);image.src=url;
@@ -138,7 +138,7 @@
     // Animated current is restricted to the remote creek, away from the house.
     for(let i=0;i<9;i++){const xx=445+(i*13+Math.floor(time*5))%32;box(c,xx,252+i*4,3,1,'#6c8990');}
     const g=s.wilderness;
-    const timber=(s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint))?.id==='cutaway-creek-shelter-v3-grid-v1'&&(!g||g.trees);
+    const treePlan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint),timber=(treePlan?.wholeTimber||treePlan?.id==='cutaway-creek-shelter-v3-grid-v1')&&(!g||g.trees);
     if(!timber&&(!g||g.issued.W===0)){
       box(c,32,211,7,61,'#615240');box(c,35,212,2,56,'#857050');
       for(const [xx,yy,ww,hh]of [[12,209,47,15],[16,194,39,20],[23,180,25,19]]){box(c,xx,yy,ww,hh,'#385446');box(c,xx+4,yy+3,ww-9,4,'#516b50');}
@@ -152,6 +152,7 @@
     return true;
   }
   function roundLog(c,x,y,width=16,height=7){
+    if(images['timber-log']){c.drawImage(images['timber-log'],x-width/2,y-height/2,width,height);return;}
     box(c,x-width/2,y-height/2,width,height,'#4b3828');
     box(c,x-width/2+1,y-height/2+1,width-2,height-2,'#725137');
     box(c,x-width/2+3,y-height/2+2,width-5,1,'#8b6845');
@@ -159,6 +160,8 @@
     box(c,x+width/2-2,y-1,1,2,'#63462f');
   }
   function standingTree(c,x,y,index,time=0,angle=0){
+    const image=images['timber-tree'+(index%3)];
+    if(image){c.save();c.translate(x,y);c.rotate(angle);const h=[88,94,90,92][index],w=h*image.width/image.height;c.drawImage(image,-w/2,-h,w,h);c.restore();return;}
     c.save();c.translate(x,y);c.rotate(angle);
     const height=[42,49,38,45][index];
     box(c,-3,-height+10,6,height-10,'#493d2e');box(c,-1,-height+11,2,height-13,'#796148');
@@ -181,32 +184,39 @@
   }
   function trees(c,s,time,projectX=x=>x,preview=false){
     const plan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint);
-    if(plan?.id!=='cutaway-creek-shelter-v3-grid-v1'||(s.wilderness&&!s.wilderness.trees))return;
+    if((!plan?.wholeTimber&&plan?.id!=='cutaway-creek-shelter-v3-grid-v1')||(s.wilderness&&!s.wilderness.trees))return;
     const list=s.wilderness?.trees||[25,58,91,124].map((x,i)=>({id:'tree-'+i,x,felled:false}));
     const pose=preview?null:root.TownWildGather?.sample(s.wilderness);
     for(const [i,tree]of list.entries()){
       const x=projectX(tree.x),falling=pose?.treeId===tree.id&&pose.phase==='fell';
       if(!tree.felled&&!falling)standingTree(c,x,272,i,time);
       else{
-        box(c,x-4,268,8,4,'#5b432f');box(c,x-3,268,6,2,'#98764b');
+        if(images['timber-stump'])c.drawImage(images['timber-stump'],x-6,264,12,8);
+        else{box(c,x-4,268,8,4,'#5b432f');box(c,x-3,268,6,2,'#98764b');}
         if(falling)standingTree(c,x,270,i,time,pose.progress*Math.PI/2);
         else if(tree.remaining>0){
-          // A finite fallen trunk gets shorter as its reserved sections leave the source.
-          roundLog(c,x+8,268,10+20*tree.remaining/tree.units,6);
-          box(c,x+14,265,5,1,'#536046');
+          // Depleted source trees leave only a stump.
+          if(images['timber-fallen'])c.drawImage(images['timber-fallen'],x,249,80,23);
+          else roundLog(c,x+40,268,80,6.4);
         }
       }
     }
+  }
+  function installedLog(c,p,x,y,w,h){
+    c.save();c.beginPath();c.rect(x,y,w,h);c.clip();roundLog(c,x+w/2,y+h/2,w,h);
+    const side=images['v2-side'],sy=272-(p.tileSource.y+p.tileSource.h)*16;
+    if(side){c.drawImage(side,x,sy,7,32);c.drawImage(side,x+w-7,sy,7,32);}
+    c.restore();
   }
   function timberOverlay(c,pose,time,projectX=x=>x){
     if(!pose)return;
     if(pose.log){
       const {x,y}=pose.log;
-      roundLog(c,projectX(x),y);
+      roundLog(c,projectX(x),y,pose.log.length||16,pose.log.diameter||7);
       // Hands reach toward the same log; neither pet owns a duplicate sprite.
       if(pose.team&&['team-pickup','team-carry','stage','lift','align','reveal','stock'].includes(pose.phase)){
         pose.pets.forEach((p,i)=>{
-          const xx=projectX(p.x),yy=Math.min(p.y-5,y+1);
+          const xx=pose.log.length>16?projectX(x)+p.x-x:projectX(p.x),yy=Math.min(p.y-5,y+1);
           box(c,xx+(i===0?3:-7),yy,5,3,'#d8b38b');
         });
       }
@@ -218,7 +228,7 @@
         box(c,x+side*6-3,252+hit*6,8,3,'#697572');
       });
     }else if(pose.phase==='cut'){
-      const center=projectX(pose.log.x),stroke=Math.round(Math.sin(time*10)*2);
+      const center=projectX(pose.log.x)-(pose.whole?30:0),stroke=Math.round(Math.sin(time*10)*2);
       box(c,center-10+stroke,265,20,2,'#77817a');
       box(c,center-12+stroke,263,2,5,'#805d3c');box(c,center+10+stroke,263,2,5,'#805d3c');
       box(c,center-4,271,3,1,'#8f6a43');

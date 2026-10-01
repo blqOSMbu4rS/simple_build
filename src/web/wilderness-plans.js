@@ -40,6 +40,17 @@
   return plan;
   }
   const current=build(true,true),v2=build(true),legacy=build(false);
-  if(typeof module!=='undefined'&&module.exports)module.exports=current;
-  else root.TownBlueprints.push(current,v2,legacy);
+  // Whole logs are a separately versioned exception to square construction.
+  const timber=JSON.parse(JSON.stringify(current));
+  timber.id='cutaway-creek-shelter-v4-timber-v1';timber.sourcePlanId='cutaway-creek-shelter-v4';
+  timber.signature=timber.silhouette=timber.id;timber.wholeTimber=true;
+  timber.description='完整原木后墙 · 双宠合抬 · 就地取材';
+  const oldLogs=timber.parts.filter(p=>p.tileSource.id==='logs'),source=oldLogs[0].tileSource;
+  const courses=Array.from({length:5},(_,i)=>({...source,id:'logs@course-'+i,y:source.y+i*2/5,w:5,h:2/5,
+    cost:{W:2},deps:i?['logs@course-'+(i-1)]:oldLogs[0].deps,seconds:1.2,workers:2,required:true,
+    longTimber:{length:80,diameter:6.4},tileSource:source,label:'安装第 '+(i+1)+' 根完整圆木'}));
+  timber.parts=timber.parts.flatMap(p=>p.id===oldLogs[0].id?courses:oldLogs.some(l=>l.id===p.id)?[]:[p]);
+  for(const p of timber.parts)p.deps=[...new Set(p.deps.flatMap(id=>oldLogs.some(l=>l.id===id)?courses.map(c=>c.id):[id]))];
+  if(typeof module!=='undefined'&&module.exports)module.exports=timber;
+  else root.TownBlueprints.push(timber,current,v2,legacy);
 })(globalThis);

@@ -278,7 +278,7 @@
     const activeIds=new Set(s.active?s.active.materialIds:[]);
     if(s.active) {
       if(currentIds.has(s.active.id)||!definitions.some(c=>JSON.stringify(c)===JSON.stringify(s.active.part))||s.active.id!==s.active.part.id||!Number.isFinite(s.active.elapsed)||s.active.elapsed<0||s.active.elapsed>s.active.total+.1)throw Error('施工任务损坏');
-      if(!Array.isArray(s.active.workers)||s.active.workers.length!==(s.active.motion===MOT?.TEAM_VERSION?2:s.active.motion===MOT?.VERSION?1:s.active.part.workers)||new Set(s.active.workers).size!==s.active.workers.length||s.active.workers.some(i=>i!==0&&i!==1))throw Error('施工人员损坏');
+      if(!Array.isArray(s.active.workers)||s.active.workers.length!==(MOT?.isTeam(s.active)?2:s.active.motion===MOT?.VERSION?1:s.active.part.workers)||new Set(s.active.workers).size!==s.active.workers.length||s.active.workers.some(i=>i!==0&&i!==1))throw Error('施工人员损坏');
     }
     for(const field of ['nextBatch','decision'])if(!Number.isInteger(s[field])||s[field]<0)throw Error('计数器损坏');
     for(const pet of s.pets)if(!Number.isFinite(pet.x)||!Number.isFinite(pet.y)||pet.x<0||pet.x>480||pet.y<0||pet.y>GROUND)throw Error('宠物位置损坏');
@@ -286,7 +286,7 @@
       const a=s.active;
       if(a.motion!==undefined&&(!s.plan.cutaway||!MOT?.accepts(a)))throw Error('未知施工动作版本');
       if(MOT?.accepts(a)){
-        if(a.motion===MOT.TEAM_VERSION&&!MOT.isTimber(s.plan,a.part))throw Error('合抬图纸损坏');
+        if(MOT.isTeam(a)&&!MOT.isTimber(s.plan,a.part))throw Error('合抬图纸损坏');
         MOT.validate(a,s.materials);
       }
       if(!Array.isArray(a.durations)||(!MOT?.accepts(a)&&a.durations.length!==6)||a.durations.some(n=>!Number.isFinite(n)||n<0||n>120)||!Number.isFinite(a.total)||Math.abs(a.durations.reduce((x,y)=>x+y,0)-a.total)>.001)throw Error('施工时间损坏');

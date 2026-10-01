@@ -84,8 +84,12 @@
     const amounts=root.TownEngine.inventory(s);const colors={W:'#a8794c',S:'#89939a',C:'#ca8063',B:'#8d7850',D:'#947050'};
     for(const [i,k] of (s.plan?.wilderness?['W','S','B','D']:['W','S','C']).entries()){
       const pose=root.TownCutawayMotion?.accepts(s.active)?root.TownCutawayMotion.sample(s.active):null;
-      const taken=pose?.team?(k==='W'&&pose.log?1:0):pose?s.active.materialKinds.filter((kind,j)=>kind===k&&(j<pose.unit||(j===pose.unit&&pose.held))).length:0;
+      const taken=pose?.team?(k==='W'&&pose.log?s.active.materialIds.length:0):pose?s.active.materialKinds.filter((kind,j)=>kind===k&&(j<pose.unit||(j===pose.unit&&pose.held))).length:0;
       const x=({W:56,S:95,C:134,B:134,D:173})[k],n=amounts.free[k]+amounts.reserved[k]-taken;
+      if(k==='W'&&s.plan?.wholeTimber){
+        for(let j=0;j<Math.min(3,Math.ceil(n/2));j++)root.TownWildernessArt.timberOverlay(c,{log:{x:travelX(s,110),y:268.8-j*6.4,length:80,diameter:6.4}},s.time);
+        continue;
+      }
       for(let j=0;j<Math.min(4,Math.ceil(n/4));j++){
         const yy=267-j*6;box(c,x+(j%2)*3,yy,26,5,'#514b40');box(c,x+2+(j%2)*3,yy+1,22,3,colors[k]);
       }
@@ -112,6 +116,7 @@
     c.restore();
   }
   function drawPart(c,p,plan,time=0){
+    if(p.longTimber){const [x,y,w,h]=houseRect(p,plan);root.TownWildernessArt.installedLog(c,p,x,y,w,h);return;}
     if(p.tileSource){
       const [x,y]=houseRect(p,plan);
       c.save();c.beginPath();c.rect(x,y,G,G);c.clip();
@@ -416,7 +421,11 @@
         }
       }
       const gathering=wilderness?root.TownWildGather.sample(s.wilderness):null;
-      for(let i=0;i<2;i++)pet(c,{...s.pets[i],x:travelX(s,s.pets[i].x)},i,t,
+      const pair=gathering?.whole?gathering:pose?.whole?pose:null;
+      const center=pair?.pets.reduce((n,p)=>n+p.x,0)/2;
+      // Project the shared center once so the full log and both end grips stay rigid.
+      const petX=x=>pair?travelX(s,center)+x-center:travelX(s,x);
+      for(let i=0;i<2;i++)pet(c,{...s.pets[i],x:petX(s.pets[i].x)},i,t,
         gathering?.team?null:i===1&&gathering?gathering.held:
         a&&a.workers.includes(i)?pose?pose.held:['carry','climb'].includes(a.phase)?a.part.material:null:null,
         a&&a.workers.includes(i)&&(pose?pose.hammer:a.phase==='install'),!s.plan||!!s.plan.residential);
@@ -439,7 +448,7 @@
       if(occluders&&(source.kind==='wall'||source.asset==='wall')){
         const [x,y,w,h]=houseRect(source,style);
         c.save();
-        if(p.tileSource){const [tx,ty]=houseRect(p,style);c.beginPath();c.rect(tx,ty,16,16);c.clip();}
+        if(p.tileSource){const [tx,ty,tw,th]=houseRect(p,style);c.beginPath();c.rect(tx,ty,tw,th);c.clip();}
         // Back walls receive light; only the installed side cross-sections block it.
         c.fillStyle='#000';const thickness=plan.artStyle==='creek-v2'?7:4;
         c.fillRect(x,y,thickness,source.openLeft?Math.max(0,h-32):h);

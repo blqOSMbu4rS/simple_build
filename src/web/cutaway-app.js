@@ -1,8 +1,8 @@
 (function(){
   'use strict';
   const E=TownEngine,R=TownCutawayRenderer,$=id=>document.getElementById(id),KEY='desktop-build-cutaway-study-v1';
-  const plans=E.BLUEPRINTS.filter(p=>p.residential&&p.gridBuild&&!['cutaway-window-cottage-v1','cutaway-window-cottage-v2','cutaway-creek-shelter-v1','cutaway-creek-shelter-v2'].includes(p.sourcePlanId));let state=E.create(42),selected=0,clock=0,lastSave=0;
-  try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||p.sourcePlanId===data.selected||(/^cutaway-creek-shelter-v[12]/.test(String(data.selected))&&p.sourcePlanId==='cutaway-creek-shelter-v3')));if(state.status==='building'||state.status==='finishing')state.paused=true;}}
+  const plans=E.BLUEPRINTS.filter(p=>p.residential&&p.gridBuild&&!['cutaway-window-cottage-v1','cutaway-window-cottage-v2','cutaway-creek-shelter-v1','cutaway-creek-shelter-v2','cutaway-creek-shelter-v3'].includes(p.sourcePlanId));let state=E.create(42),selected=0,clock=0,lastSave=0;
+  try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||p.sourcePlanId===data.selected||(/^cutaway-creek-shelter-v[123]/.test(String(data.selected))&&p.sourcePlanId==='cutaway-creek-shelter-v4')));if(state.status==='building'||state.status==='finishing')state.paused=true;}}
   catch(err){console.warn('2D study restore:',err);state=E.create(42);}
   if(state.status==='idle')state.blueprint=plans[selected].id;
   // Camera belongs to this view, never to the construction state or saved plan.
@@ -46,7 +46,7 @@
     const plan=state.plan||plans[selected],inv=E.inventory(state);
     document.querySelectorAll('.card').forEach((el,i)=>{el.setAttribute('aria-pressed',String(i===selected));el.disabled=state.status!=='idle';});
     $('title').textContent=(state.plan?'正在建造：':'准备建造：')+plan.name;
-    $('progress').textContent=`${state.installed.length} / ${state.plan?.parts.length||plan.parts.length} 块`;
+    $('progress').textContent=`${state.installed.length} / ${state.plan?.parts.length||plan.parts.length} ${plan.wholeTimber?'件':'块'}`;
     const action=TownCutawayMotion.accepts(state.active)?TownCutawayMotion.sample(state.active):null;
     const actionLabels={descend:'返回料堆',fetch:'前往料堆',pickup:'拿起一块材料',carry:'搬运一块材料',climb:'搬往高处施工点',deliver:'放下材料',install:'敲打建造中',reveal:'烟雾散去，方块完成',
       'team-pickup':'两人握住圆木两端','team-carry':'两人合抬圆木到墙下',stage:'在墙下放稳圆木',lift:'两人从地面抬升圆木',align:'对齐并固定原木墙'};
