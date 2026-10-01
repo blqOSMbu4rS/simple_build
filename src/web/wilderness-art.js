@@ -139,12 +139,78 @@
       }
     }else box(c,x+2,y+4,w-4,h-5,'#73543a');
   }
+  let sceneryLayers;
+  function splitScenery(image){
+    if(sceneryLayers?.image===image)return sceneryLayers;
+    const scale=Math.max(1,Math.round(image.width/480)),width=480*scale,height=304*scale;
+    const canvas=(w=width,h=height)=>{const a=document.createElement('canvas');a.width=w;a.height=h;return a;};
+    const base=canvas(),ctx=base.getContext('2d');ctx.imageSmoothingEnabled=false;ctx.drawImage(image,0,0,width,height);
+    const original=ctx.getImageData(0,0,width,height),fixed=ctx.getImageData(0,0,width,height);
+    const foliage=canvas(),fc=foliage.getContext('2d'),leaves=fc.createImageData(width,height);
+    const waterMask=new Uint8Array(width*height),leafMask=new Uint8Array(width*height);
+    // Extract actual painted foliage and water, leaving trunks, banks and rocks fixed.
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+      const n=y*width+x,i=n*4,r=original.data[i],g=original.data[i+1],b=original.data[i+2];
+      if(y<178*scale&&g>r*1.08&&g>b*1.12){leafMask[n]=1;leaves.data.set(original.data.subarray(i,i+4),i);fixed.data.set([26,48,45,255],i);}
+      if(x>=424*scale&&y>=160*scale&&y<234*scale&&b>g*1.12&&g>r*1.15){waterMask[n]=1;fixed.data.set([38,65,80,255],i);}
+    }
+    // Reconstruct only the exposed leaf edges from nearby non-leaf background.
+    // Deep canopy is replaced by forest shade, with no duplicate foliage underneath.
+    for(let y=0;y<178*scale;y++)for(let x=0;x<width;x++)if(leafMask[y*width+x]){
+      search:for(let d=1;d<=3*scale;d++)for(const [dx,dy]of [[-d,0],[d,0],[0,-d],[0,d]]){
+        const xx=x+dx,yy=y+dy;if(xx<0||xx>=width||yy<0||yy>=height)continue;
+        const n=yy*width+xx;if(!leafMask[n]){fixed.data.set(original.data.subarray(n*4,n*4+4),(y*width+x)*4);break search;}
+      }
+    }
+    ctx.putImageData(fixed,0,0);fc.putImageData(leaves,0,0);
+    const water=[];
+    // Texture moves within each connected water run, never across the shoreline.
+    for(let frame=0;frame<16;frame++){
+      const layer=canvas(56*scale,74*scale),wc=layer.getContext('2d'),pixels=wc.createImageData(layer.width,layer.height);
+      for(let y=160*scale;y<234*scale;y++)for(let x=424*scale;x<width;){
+        if(!waterMask[y*width+x]){x++;continue;}const start=x;
+        while(x<width&&waterMask[y*width+x])x++;const runWidth=x-start;
+        for(let xx=start;xx<x;xx++){
+          let sx=start+(xx-start-Math.floor(frame*runWidth/16)+runWidth)%runWidth,sy=y;
+          // The two cascades descend; the pools flow toward the right foreground.
+          if((xx>=452*scale&&y>=177*scale&&y<198*scale)||(xx>=471*scale&&y>=211*scale&&y<221*scale)){
+            let top=y,bottom=y;while(top>160*scale&&waterMask[(top-1)*width+xx])top--;
+            while(bottom<234*scale-1&&waterMask[(bottom+1)*width+xx])bottom++;
+            const runHeight=bottom-top+1;sx=xx;sy=top+(y-top-Math.floor(frame*runHeight/16)+runHeight)%runHeight;
+          }
+          const i=(sy*width+sx)*4;pixels.data.set(original.data.subarray(i,i+4),((y-160*scale)*layer.width+xx-424*scale)*4);
+        }
+      }
+      wc.putImageData(pixels,0,0);water.push(layer);
+    }
+    return sceneryLayers={image,base,foliage,water,scale};
+  }
+  function wind(time,phase=0){
+    return (Math.sin(time*.9+phase)-Math.sin(phase))*(.7+.3*Math.sin(time*.23)**2);
+  }
+  function animatedScenery(c,image,time){
+    time=Math.max(0,time);
+    const layers=splitScenery(image),k=layers.scale;c.drawImage(layers.base,0,0,480,304);
+    // Broad independent crowns follow the same passing gust, in whole pixel steps.
+    for(let x=0;x<480;x+=80)for(let y=0;y<178;y+=16){
+      const h=Math.min(16,178-y),dx=Math.round(wind(time,x*.013+y*.006));
+      c.drawImage(layers.foliage,x*k,y*k,80*k,h*k,x+dx,y,80,h);
+    }
+    c.drawImage(layers.water[Math.floor(time*8)%16],424,160,56,74);
+    // Sparse leaves travel from the canopy and fade before reaching the worksite.
+    for(let i=0;i<6;i++){
+      const age=(time*.12+i*.173)%1;if(age>.8)continue;
+      const x=38+i*68+age*25+Math.sin(time*.9+i)*3,y=38+i%3*25+age*108;
+      c.save();c.globalAlpha=Math.sin(age/.8*Math.PI)*.65;
+      box(c,x,y,Math.sin(time*3+i)>0?2:1,1,i%2?'#627747':'#849052');c.restore();
+    }
+  }
   function environment(c,s,time=0){
     const latest=(s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint))?.artStyle==='creek-v2';
     if(!latest)loadLegacy();
     if(latest&&images['v2-environment']){
       // Keep the whole background visible; the scene projection places the shelter.
-      c.drawImage(images['v2-environment'],0,0,480,304);
+      animatedScenery(c,images['v2-environment'],time);
     }else if(images.environment){
       // Generated ground lip is row 446; align walkable ground with simulation.
       c.drawImage(images.environment,0,0,960,446,0,0,480,272);
@@ -153,7 +219,7 @@
       box(c,0,0,480,304,'#384f52');box(c,0,256,432,48,'#715d43');box(c,438,235,42,69,'#385e65');
     }
     // Animated current is restricted to the remote creek, away from the house.
-    for(let i=0;i<9;i++){const xx=445+(i*13+Math.floor(time*5))%32;box(c,xx,252+i*4,3,1,'#6c8990');}
+    if(!latest)for(let i=0;i<9;i++){const xx=445+(i*13+Math.floor(time*5))%32;box(c,xx,252+i*4,3,1,'#6c8990');}
     const g=s.wilderness;
     const treePlan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint),timber=(treePlan?.wholeTimber||treePlan?.id==='cutaway-creek-shelter-v3-grid-v1')&&(!g||g.trees);
     if(!timber&&(!g||g.issued.W===0)){
@@ -178,7 +244,15 @@
   }
   function standingTree(c,x,y,index,time=0,angle=0){
     const image=images['timber-tree'+(index%3)];
-    if(image){c.save();c.translate(x,y);c.rotate(angle);const h=[88,94,90,92][index],w=h*image.width/image.height;c.drawImage(image,-w/2,-h,w,h);c.restore();return;}
+    if(image){
+      c.save();c.translate(x,y);c.rotate(angle);const h=[88,94,90,92][index],w=h*image.width/image.height;
+      // Root and lower trunk remain anchored; a felled tree follows only its fall.
+      for(let row=0;row<image.height;row+=32){
+        const sh=Math.min(32,image.height-row),rise=1-row/image.height;
+        const dx=angle?0:Math.round(wind(time,index*.8)*Math.max(0,(rise-.3)/.7));
+        c.drawImage(image,0,row,image.width,sh,-w/2+dx,-h+row*h/image.height,w,sh*h/image.height);
+      }c.restore();return;
+    }
     c.save();c.translate(x,y);c.rotate(angle);
     const height=[42,49,38,45][index];
     box(c,-3,-height+10,6,height-10,'#493d2e');box(c,-1,-height+11,2,height-13,'#796148');
