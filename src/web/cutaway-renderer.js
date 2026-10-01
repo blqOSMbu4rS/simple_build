@@ -83,8 +83,8 @@
   function stock(c,s){
     const amounts=root.TownEngine.inventory(s);const colors={W:'#a8794c',S:'#89939a',C:'#ca8063',B:'#8d7850',D:'#947050'};
     for(const [i,k] of (s.plan?.wilderness?['W','S','B','D']:['W','S','C']).entries()){
-      const pose=s.active?.motion===root.TownCutawayMotion?.VERSION?root.TownCutawayMotion.sample(s.active):null;
-      const taken=pose?s.active.materialKinds.filter((kind,j)=>kind===k&&(j<pose.unit||(j===pose.unit&&pose.held))).length:0;
+      const pose=root.TownCutawayMotion?.accepts(s.active)?root.TownCutawayMotion.sample(s.active):null;
+      const taken=pose?.team?(k==='W'&&pose.log?1:0):pose?s.active.materialKinds.filter((kind,j)=>kind===k&&(j<pose.unit||(j===pose.unit&&pose.held))).length:0;
       const x=({W:56,S:95,C:134,B:134,D:173})[k],n=amounts.free[k]+amounts.reserved[k]-taken;
       for(let j=0;j<Math.min(4,Math.ceil(n/4));j++){
         const yy=267-j*6;box(c,x+(j%2)*3,yy,26,5,'#514b40');box(c,x+2+(j%2)*3,yy+1,22,3,colors[k]);
@@ -370,6 +370,7 @@
     else {if(!retreat||!root.TownCottageArt?.environment(c))ground(c,time);scenery(c,time,retreat);}
     if(!preview){c.save();if(siteScale(s)!==1)c.translate(0,-88);stock(c,s);c.restore();}
     c.save();siteTransform(c,s);
+    if(wilderness)root.TownWildernessArt.trees(c,s,time,x=>travelX(s,x),preview);
     chimneySmoke(c,s,time,preview);
     const plan=s.plan;if(plan){
       const style=plan.modular?{...plan,layout:plan.recipe.budget.S>plan.recipe.budget.W?'stone':'wood'}:plan;
@@ -377,7 +378,7 @@
       const light=!root.TownCutawayLighting&&parts.some(p=>p.kind==='lamp');
       if(light){const glow=c.createRadialGradient(290,204,5,290,204,140);glow.addColorStop(0,'#ffe6a660');glow.addColorStop(1,'#ffe6a600');box(c,145,60,300,210,glow);}
       const layers=parts.map(p=>({p,progress:1}));
-      const motion=s.active?.motion===root.TownCutawayMotion?.VERSION?root.TownCutawayMotion.sample(s.active):null;
+      const motion=root.TownCutawayMotion?.accepts(s.active)?root.TownCutawayMotion.sample(s.active):null;
       if(!preview&&motion?.visible&&!plan.gridBuild)layers.push({p:s.active.part,progress:1});
       // Legacy in-flight saves also hide their component until the task finishes.
       layers.sort((a,b)=>renderLayer(a.p,plan)-renderLayer(b.p,plan)||a.p.y-b.p.y);
@@ -386,7 +387,6 @@
       windowGlass(c,s,preview,false,time);
     }
     if(!retreat&&!wilderness)shrubs(c,time);
-    if(wilderness&&!preview)root.TownWildernessArt.gatherOverlay(c,s,time,x=>travelX(s,x));
     root.TownCutawayLighting?.drawEmitters(c,s,time,preview);
     if(preview&&wilderness){pet(c,{x:265,y:272},1,0,'B',false,true);}
     else if(preview&&s.plan?.artStyle?.startsWith('woodland-')){
@@ -397,10 +397,10 @@
       c.fillStyle='#e4e1c0';c.font='8px monospace';c.fillText('1m',47,264);
     }
     if(!preview){
-      const a=s.active,pose=a?.motion===root.TownCutawayMotion?.VERSION?root.TownCutawayMotion.sample(a):null;
+      const a=s.active,pose=root.TownCutawayMotion?.accepts(a)?root.TownCutawayMotion.sample(a):null;
       const t=s.time; // Pause, speed and save/restore share the simulation clock.
       if(a){
-        if(pose&&pose.delivered>0&&!pose.visible){
+        if(pose&&!pose.team&&pose.delivered>0&&!pose.visible){
           for(let j=0;j<Math.min(6,pose.delivered);j++){
             const color=a.materialKinds[j]==='S'?'#929c9b':a.materialKinds[j]==='C'?'#c98569':'#b1834d';
             box(c,a.target.x+10+(j%2)*8,a.target.y-3-Math.floor(j/2)*5,11,4,color);
@@ -408,17 +408,20 @@
         }
         const opacity=pose?pose.smoke:a.phase==='install'?1:0;
         if(opacity)smoke(c,a.part,s.plan,t,opacity);
-        const worker=s.pets[a.workers[0]];
+        for(const id of a.workers){const worker=s.pets[id];
         if(worker.y<Y-4){
           box(c,worker.x-6,worker.y,2,Y-worker.y,'#816447');box(c,worker.x+6,worker.y,2,Y-worker.y,'#816447');
           for(let yy=worker.y+7;yy<Y;yy+=9)box(c,worker.x-6,yy,14,2,'#c19b66');
         }
+        }
       }
       const gathering=wilderness?root.TownWildGather.sample(s.wilderness):null;
       for(let i=0;i<2;i++)pet(c,{...s.pets[i],x:travelX(s,s.pets[i].x)},i,t,
-        i===1&&gathering?gathering.held:
+        gathering?.team?null:i===1&&gathering?gathering.held:
         a&&a.workers.includes(i)?pose?pose.held:['carry','climb'].includes(a.phase)?a.part.material:null:null,
         a&&a.workers.includes(i)&&(pose?pose.hammer:a.phase==='install'),!s.plan||!!s.plan.residential);
+      if(wilderness)root.TownWildernessArt.gatherOverlay(c,s,t,x=>travelX(s,x));
+      if(pose?.team)root.TownWildernessArt.timberOverlay(c,pose,t,x=>travelX(s,x));
     }
     c.restore();c.restore();
   }

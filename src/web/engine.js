@@ -157,6 +157,9 @@
     return c.label||({masonry:'砌筑石墙模块',plaster:'安装半木墙面',archdoor:'安装拱形门',cornice:'安装塔楼檐口',steeproof:'拼装尖顶',roofhalf:'铺设屋顶坡面',flag:'升起旗帜',crest:'安装城堡纹章',battlement:'砌筑城垛',dormer:'安装老虎窗',chimney:'砌筑烟囱',shutters:'安装木百叶窗',awning:'安装门口遮阳篷',clock:'安装木制钟面',base:'铺设地基',post:'竖起立柱',beam:'两人合抬横梁',wall:'安装墙面',gable:'拼装山墙',roof:'铺设斜屋面',ridge:'合拢屋脊',flat:'铺设盖顶',canopy:'两人展开布篷',deck:'安装楼板',ladder:'固定上层梯子',sign:'挂上木招牌',banner:'挂好布饰',step:'摆放入口石阶'})[c.kind];
   }
   function beginTask(s,c) {
+    const timber=MOT?.isTimber(s.plan,c);
+    // Finish a collector's current delivery before asking the same pet to lift timber.
+    if(s.wilderness?.active&&(s.wilderness.active.team||timber))return;
     if(s.plan.template){
       const budget=available(s),missing={};
       for(const k of MATERIAL_KINDS)if((c.cost[k]||0)>budget[k])missing[k]=c.cost[k]-budget[k];
@@ -170,9 +173,9 @@
     if(MATERIAL_KINDS.some(k=>stock.filter(m=>m.kind===k).length!==(c.cost[k]||0)))throw Error('Missing reserved material');
     for(const m of stock)m.state='hard'; // Dedicated shaping begins at claim: irreversible and atomic.
     if(s.plan.cutaway){
-      const target={x:ORIGIN+(c.x+c.w/2)*GRID-12,y:Math.min(GROUND,GROUND-c.y*GRID)};
-      s.active=MOT.create(c,stock,s.pets,s.plan.wilderness?0:hash(c.id)%2,target);
-      note(s,taskLabel(c)+(s.plan.gridBuild?' · 搬一块，建一格':' · 每次搬一块，搬齐后敲打建造'));return;
+      const target={x:ORIGIN+(c.x+c.w/2)*GRID-(timber?0:12),y:Math.min(GROUND,GROUND-c.y*GRID)};
+      s.active=MOT.create(c,stock,s.pets,s.plan.wilderness?0:hash(c.id)%2,target,timber);
+      note(s,taskLabel(c)+(timber?' · 两人抬木，到墙下再抬升对齐':s.plan.gridBuild?' · 搬一块，建一格':' · 每次搬一块，搬齐后敲打建造'));return;
     }
     const target=(s.plan.modular?MOD.workPoint(s.plan,c):ART.workPoint(s.plan,c.id))||{x:ORIGIN+(c.x+c.w/2)*GRID,y:Math.min(GROUND,GROUND-c.y*GRID)};
     const supply={x:c.material==='W'?84:c.material==='S'?127:165,y:GROUND};
@@ -206,9 +209,10 @@
     if(s.dirty)replan(s);
     if(s.active) {
       const a=s.active;a.elapsed+=dt;
-      if(a.motion===MOT?.VERSION){
+      if(MOT?.accepts(a)){
         const pose=MOT.sample(a);a.phase=pose.phase;
-        s.pets[a.workers[0]]={x:pose.x,y:pose.y};
+        if(pose.team)pose.pets.forEach((p,i)=>{s.pets[i]={...p};});
+        else s.pets[a.workers[0]]={x:pose.x,y:pose.y};
       }else{
       let rest=a.elapsed,index=0;
       while(index<a.durations.length-1&&rest>=a.durations[index])rest-=a.durations[index++];
@@ -274,15 +278,18 @@
     const activeIds=new Set(s.active?s.active.materialIds:[]);
     if(s.active) {
       if(currentIds.has(s.active.id)||!definitions.some(c=>JSON.stringify(c)===JSON.stringify(s.active.part))||s.active.id!==s.active.part.id||!Number.isFinite(s.active.elapsed)||s.active.elapsed<0||s.active.elapsed>s.active.total+.1)throw Error('施工任务损坏');
-      if(!Array.isArray(s.active.workers)||s.active.workers.length!==(s.active.motion===MOT?.VERSION?1:s.active.part.workers)||new Set(s.active.workers).size!==s.active.workers.length||s.active.workers.some(i=>i!==0&&i!==1))throw Error('施工人员损坏');
+      if(!Array.isArray(s.active.workers)||s.active.workers.length!==(s.active.motion===MOT?.TEAM_VERSION?2:s.active.motion===MOT?.VERSION?1:s.active.part.workers)||new Set(s.active.workers).size!==s.active.workers.length||s.active.workers.some(i=>i!==0&&i!==1))throw Error('施工人员损坏');
     }
     for(const field of ['nextBatch','decision'])if(!Number.isInteger(s[field])||s[field]<0)throw Error('计数器损坏');
     for(const pet of s.pets)if(!Number.isFinite(pet.x)||!Number.isFinite(pet.y)||pet.x<0||pet.x>480||pet.y<0||pet.y>GROUND)throw Error('宠物位置损坏');
     if(s.active){
       const a=s.active;
-      if(a.motion!==undefined&&(!s.plan.cutaway||a.motion!==MOT?.VERSION))throw Error('未知施工动作版本');
-      if(a.motion===MOT?.VERSION)MOT.validate(a,s.materials);
-      if(!Array.isArray(a.durations)||(a.motion!==MOT?.VERSION&&a.durations.length!==6)||a.durations.some(n=>!Number.isFinite(n)||n<0||n>120)||!Number.isFinite(a.total)||Math.abs(a.durations.reduce((x,y)=>x+y,0)-a.total)>.001)throw Error('施工时间损坏');
+      if(a.motion!==undefined&&(!s.plan.cutaway||!MOT?.accepts(a)))throw Error('未知施工动作版本');
+      if(MOT?.accepts(a)){
+        if(a.motion===MOT.TEAM_VERSION&&!MOT.isTimber(s.plan,a.part))throw Error('合抬图纸损坏');
+        MOT.validate(a,s.materials);
+      }
+      if(!Array.isArray(a.durations)||(!MOT?.accepts(a)&&a.durations.length!==6)||a.durations.some(n=>!Number.isFinite(n)||n<0||n>120)||!Number.isFinite(a.total)||Math.abs(a.durations.reduce((x,y)=>x+y,0)-a.total)>.001)throw Error('施工时间损坏');
       if(!Array.isArray(a.materialIds)||new Set(a.materialIds).size!==a.materialIds.length||a.materialIds.some(id=>!s.materials.some(m=>m.id===id&&m.owner===a.id&&m.state==='hard'&&m.building===s.building)))throw Error('施工材料损坏');
       if(!a.part.deps.every(id=>currentIds.has(id)))throw Error('施工前置缺失');
       for(const pos of [a.target,a.supply,...a.starts])if(!pos||!Number.isFinite(pos.x)||!Number.isFinite(pos.y)||pos.x<0||pos.x>480||pos.y<0||pos.y>GROUND)throw Error('施工路径损坏');

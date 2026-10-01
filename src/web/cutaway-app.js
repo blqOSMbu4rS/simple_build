@@ -47,8 +47,9 @@
     document.querySelectorAll('.card').forEach((el,i)=>{el.setAttribute('aria-pressed',String(i===selected));el.disabled=state.status!=='idle';});
     $('title').textContent=(state.plan?'正在建造：':'准备建造：')+plan.name;
     $('progress').textContent=`${state.installed.length} / ${state.plan?.parts.length||plan.parts.length} 块`;
-    const action=state.active?.motion===TownCutawayMotion.VERSION?TownCutawayMotion.sample(state.active):null;
-    const actionLabels={descend:'返回料堆',fetch:'前往料堆',pickup:'拿起一块材料',carry:'搬运一块材料',climb:'搬往高处施工点',deliver:'放下材料',install:'敲打建造中',reveal:'烟雾散去，方块完成'};
+    const action=TownCutawayMotion.accepts(state.active)?TownCutawayMotion.sample(state.active):null;
+    const actionLabels={descend:'返回料堆',fetch:'前往料堆',pickup:'拿起一块材料',carry:'搬运一块材料',climb:'搬往高处施工点',deliver:'放下材料',install:'敲打建造中',reveal:'烟雾散去，方块完成',
+      'team-pickup':'两人握住圆木两端','team-carry':'两人合抬圆木到墙下',stage:'在墙下放稳圆木',lift:'两人从地面抬升圆木',align:'对齐并固定原木墙'};
     $('message').textContent=action?(state.paused?'已暂停 · ':'')+actionLabels[action.phase]+' · '+state.active.part.label+' · 已送达 '+action.delivered+'/'+state.active.materialIds.length:state.message;
     $('cost').textContent='总用料 '+Object.entries(plan.costs).filter(([,n])=>n).map(([k,n])=>`${E.LABELS[k]} ${n}`).join(' · ')+(state.missing?' · 当前缺 '+Object.entries(state.missing.amounts).map(([k,n])=>`${E.LABELS[k]} ${n}`).join('、'):'');
     for(const k of E.MATERIAL_KINDS)$('stock-'+k).textContent=inv.free[k]+inv.reserved[k];
@@ -62,9 +63,10 @@
     $('fill').textContent=wild?'按需自动取材':'补足这座房子的用料';
     $('supply-heading').textContent=wild?'02 / 就地取材，一点点搭建':'02 / 撒材料，看它们搭建';
     $('supply-hint').textContent=wild?'开工后自动采集；也可关闭自动，逐次指定取材':'缺料时现场会保留，补齐后继续';
-    const phases={descend:'返回地面',source:'前往材料来源',chop:'砍伐取木',cut:'截成短木',
+    const phases={descend:'返回地面',source:'前往材料来源',chop:pose?.team?'两人合作砍树':'砍伐取木',fell:'退开，树木倒下',trim:'修枝整理倒木',cut:pose?.team?'两人拉锯截取圆木':'截成短木',
       'collect-stone':'挑选溪石','collect-branch':'整理树枝与干草',dig:'挖取泥土',water:'前往溪边提水',
-      'fill-water':'装水', 'return-water':'把水提回和泥盆',mix:'搅拌和泥','gather-carry':'搬回料堆',stock:'放好一份材料'};
+      'fill-water':'装水', 'return-water':'把水提回和泥盆',mix:'搅拌和泥','gather-carry':'搬回料堆',stock:'放好一份材料',
+      pickup:'拿起截好的木料','team-pickup':'两人抬起截好的圆木','team-carry':'两人把圆木搬回料堆'};
     $('gather-status').hidden=!wild;
     $('gather-status').textContent=(state.paused?'已暂停 · ':'')+(pose?phases[pose.phase]:g?(state.status==='done'?'取材建造完成':'采集待命'):'开工后开始取材')+' · 库存 '+['W','S','B','D'].map(k=>E.LABELS[k]+' '+(inv.free[k]+inv.reserved[k])).join(' / ');
 

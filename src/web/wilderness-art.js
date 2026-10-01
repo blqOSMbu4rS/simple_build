@@ -1,7 +1,7 @@
 /* Separate sprites, geology and source animation; installed tiles own the house. */
 (function(root){
   'use strict';
-  const images={},api={draw,environment,gatherOverlay,windowPanes,revision:0};
+  const images={},api={draw,environment,trees,gatherOverlay,timberOverlay,windowPanes,revision:0};
   const sources={...root.TownWildernessAssets,...Object.fromEntries(Object.entries({...root.TownWildernessAssetsV2,...root.TownWildernessAssetsV4,...root.TownWildernessAssetsV5,...root.TownWildernessAssetsV6}).map(([k,v])=>['v2-'+k,v]))};
   api.ready=Promise.all(Object.entries(sources).map(([key,url])=>new Promise(resolve=>{
     const image=new Image();image.onload=()=>{images[key]=image;api.revision++;resolve(true);};
@@ -138,11 +138,12 @@
     // Animated current is restricted to the remote creek, away from the house.
     for(let i=0;i<9;i++){const xx=445+(i*13+Math.floor(time*5))%32;box(c,xx,252+i*4,3,1,'#6c8990');}
     const g=s.wilderness;
-    if(!g||g.issued.W===0){
+    const timber=(s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint))?.id==='cutaway-creek-shelter-v3-grid-v1'&&(!g||g.trees);
+    if(!timber&&(!g||g.issued.W===0)){
       box(c,32,211,7,61,'#615240');box(c,35,212,2,56,'#857050');
       for(const [xx,yy,ww,hh]of [[12,209,47,15],[16,194,39,20],[23,180,25,19]]){box(c,xx,yy,ww,hh,'#385446');box(c,xx+4,yy+3,ww-9,4,'#516b50');}
     }
-    if(g){
+    if(g&&!g.trees){
       const cut=g.initial.W-g.remaining.W;
       for(let i=0;i<Math.min(6,Math.floor(cut/3));i++){
         box(c,20+i*5,264-i%2*4,5,4,'#75583b');box(c,21+i*5,264-i%2*4,2,2,'#ab8351');
@@ -150,8 +151,86 @@
     }
     return true;
   }
+  function roundLog(c,x,y,width=16,height=7){
+    box(c,x-width/2,y-height/2,width,height,'#4b3828');
+    box(c,x-width/2+1,y-height/2+1,width-2,height-2,'#725137');
+    box(c,x-width/2+3,y-height/2+2,width-5,1,'#8b6845');
+    box(c,x+width/2-3,y-height/2+1,2,height-2,'#a27c50');
+    box(c,x+width/2-2,y-1,1,2,'#63462f');
+  }
+  function standingTree(c,x,y,index,time=0,angle=0){
+    c.save();c.translate(x,y);c.rotate(angle);
+    const height=[42,49,38,45][index];
+    box(c,-3,-height+10,6,height-10,'#493d2e');box(c,-1,-height+11,2,height-13,'#796148');
+    box(c,-4,-6,2,6,'#594732');box(c,2,-4,3,4,'#594732');
+    for(let branch=0;branch<3;branch++){
+      const side=branch%2?1:-1,yy=-height+17+branch*6;
+      for(let n=0;n<4;n++)box(c,side*(2+n*2),yy-n,3,2,'#5d5038');
+    }
+    const sway=angle?0:Math.round(Math.sin(time*.8+index)*.8);
+    // Connected, irregular pixel clusters: a tapered crown with broad matte shades.
+    for(let row=0;row<32;row+=2){
+      const radius=Math.round(Math.sqrt(Math.max(0,1-((row-15)/17)**2))*(index%2?12:15));
+      const edge=(row+index*3)%6<3?2:0,yy=-height-11+row;
+      box(c,-radius+sway-edge,yy,radius*2+edge+1,2,row>23?'#2f4b36':'#314e3a');
+      const patch=Math.max(2,Math.round(radius*.6)),offset=Math.round(Math.sin((row+index)*.45)*4);
+      if(row>2&&row<25)box(c,-patch+sway+offset,yy,patch+3,2,row<12?'#4e6947':'#3e5d40');
+      if(row>8&&row<22)box(c,radius-8+sway,yy,5,2,'#3a5740');
+    }
+    c.restore();
+  }
+  function trees(c,s,time,projectX=x=>x,preview=false){
+    const plan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint);
+    if(plan?.id!=='cutaway-creek-shelter-v3-grid-v1'||(s.wilderness&&!s.wilderness.trees))return;
+    const list=s.wilderness?.trees||[25,58,91,124].map((x,i)=>({id:'tree-'+i,x,felled:false}));
+    const pose=preview?null:root.TownWildGather?.sample(s.wilderness);
+    for(const [i,tree]of list.entries()){
+      const x=projectX(tree.x),falling=pose?.treeId===tree.id&&pose.phase==='fell';
+      if(!tree.felled&&!falling)standingTree(c,x,272,i,time);
+      else{
+        box(c,x-4,268,8,4,'#5b432f');box(c,x-3,268,6,2,'#98764b');
+        if(falling)standingTree(c,x,270,i,time,pose.progress*Math.PI/2);
+        else if(tree.remaining>0){
+          // A finite fallen trunk gets shorter as its reserved sections leave the source.
+          roundLog(c,x+8,268,10+20*tree.remaining/tree.units,6);
+          box(c,x+14,265,5,1,'#536046');
+        }
+      }
+    }
+  }
+  function timberOverlay(c,pose,time,projectX=x=>x){
+    if(!pose)return;
+    if(pose.log){
+      const {x,y}=pose.log;
+      roundLog(c,projectX(x),y);
+      // Hands reach toward the same log; neither pet owns a duplicate sprite.
+      if(pose.team&&['team-pickup','team-carry','stage','lift','align','reveal','stock'].includes(pose.phase)){
+        pose.pets.forEach((p,i)=>{
+          const xx=projectX(p.x),yy=Math.min(p.y-5,y+1);
+          box(c,xx+(i===0?3:-7),yy,5,3,'#d8b38b');
+        });
+      }
+    }
+    if(['chop','trim'].includes(pose.phase)){
+      pose.pets.forEach((p,i)=>{
+        const x=projectX(p.x),hit=Math.floor(time*7+i)%2,side=pose.team&&i===1?-1:1;
+        box(c,x+side*6,253+hit*6,2,13,'#876344');
+        box(c,x+side*6-3,252+hit*6,8,3,'#697572');
+      });
+    }else if(pose.phase==='cut'){
+      const center=projectX(pose.log.x),stroke=Math.round(Math.sin(time*10)*2);
+      box(c,center-10+stroke,265,20,2,'#77817a');
+      box(c,center-12+stroke,263,2,5,'#805d3c');box(c,center+10+stroke,263,2,5,'#805d3c');
+      box(c,center-4,271,3,1,'#8f6a43');
+    }
+  }
   function gatherOverlay(c,s,time,projectX=x=>x){
     const pose=root.TownWildGather?.sample(s.wilderness);if(!pose)return;
+    if(pose.treeId){
+      // The single carrier uses the existing held-material drawing while walking.
+      timberOverlay(c,pose.team||!['pickup','gather-carry','stock'].includes(pose.phase)?pose:{...pose,log:null},time,projectX);
+      return;
+    }
     const p={...pose,x:projectX(pose.x)};
     if(['chop','cut'].includes(p.phase)){
       const hit=Math.floor(time*9)%2;box(c,p.x+8,250+hit*5,2,14,'#9b7146');box(c,p.x+4,249+hit*5,9,4,'#818b86');
