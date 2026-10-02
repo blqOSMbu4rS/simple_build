@@ -9,14 +9,14 @@
   function cover(s,preview){
     const plan=planOf(s),parts=preview?plan?.parts||[]:s.installed||[];
     const roofs=parts.filter(p=>p.weatherCover??['roof','roofLeft','roofRight','awning'].includes(p.kind||p.asset));
-    const revision=(root.TownWildernessArt?.revision||0)+(root.TownCottageArt?.revision||0);
+    const revision=(root.TownWildernessArt?.revision||0)+(root.TownCottageArt?.revision||0)+(root.TownDiagonalRenderer?.revision||0);
     const key=roofs.map(p=>p.id).join('|');
     if(cache?.plan===plan&&cache.key===key&&cache.revision===revision)return cache.top;
     const top=Array(W).fill(H),mask=document.createElement('canvas');mask.width=W;mask.height=H;
     const c=mask.getContext('2d',{willReadFrequently:true}),R=root.TownCutawayRenderer;
     const state=s.plan?s:{...s,plan},[x,y]=R.project(state,0,0),scale=R.siteScale(state);
-    c.translate(x,y);c.scale(scale,scale);
-    for(const p of roofs)R.drawPart(c,p,plan,0);
+    if(plan?.construction?.view?.projection==='diagonal')root.TownDiagonalRenderer.roofMask(c,plan,roofs);
+    else{c.translate(x,y);c.scale(scale,scale);for(const p of roofs)R.drawPart(c,p,plan,0);}
     const pixels=c.getImageData(0,0,W,H).data;
     for(let x=0;x<W;x++)for(let y=0;y<H;y++)if(pixels[(y*W+x)*4+3]>96){top[x]=y;break;}
     cache={plan,key,revision,top};return top;
@@ -35,7 +35,7 @@
     const c=canvas.getContext('2d'),[vx,vy,vw,vh]=R.viewport(s,preview,camera),rain=kind==='rain';
     c.save();c.imageSmoothingEnabled=false;c.scale(canvas.width/vw,canvas.height/vh);c.translate(-vx,-vy);
     // Shelter ends at the house ground line; the foreground yard stays outdoors.
-    const bottom=Math.min(H,Math.max(0,R.project(s,0,272)[1]));
+    const bottom=Math.min(H,Math.max(0,planOf(s)?.construction?.view?.weatherGround??R.project(s,0,272)[1]));
     // Only installed roof pixels shelter the cutaway. Unbuilt gaps remain exposed.
     c.beginPath();let start=0;
     for(let x=1;x<=W;x++)if(x===W||top[x]!==top[start]){

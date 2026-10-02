@@ -10,6 +10,7 @@
   <script defer src="./cutaway-legacy-plans.js"></script>
   <script defer src="./cutaway-plans.js?v=20260930-retreat-v3"></script>
   <script defer src="./wilderness-plans.js?v=20261002-weather"></script>
+  <script defer src="./island-plans.js?v=20261002-island"></script>
   <script defer src="./wilderness-gather.js?v=20261001-config"></script>
   <script defer src="./art-layout.js"></script>
   <script defer src="./modules.js"></script>
@@ -24,14 +25,15 @@
   <script defer src="./assets/wilderness/runtime.js?v=20261001-small-scenery"></script>
   <script defer src="./wilderness-art.js?v=20261001-config"></script>
   <script defer src="./cottage-art.js?v=20261001-small-scenery"></script>
-  <script defer src="./cutaway-renderer.js?v=20261002-weather"></script>
+  <script defer src="./diagonal-renderer.js?v=20261002-island"></script>
+  <script defer src="./cutaway-renderer.js?v=20261002-island"></script>
   <script defer src="./cutaway-lighting.js?v=20260930-camera"></script>
-  <script defer src="./cutaway-weather.js?v=20261002-weather"></script>
-  <script defer src="./cutaway-app.js?v=20261002-weather"></script>
+  <script defer src="./cutaway-weather.js?v=20261002-island"></script>
+  <script defer src="./cutaway-app.js?v=20261002-island"></script>
 </head>
 <body>
   <main>
-    <header><div><small>PIECE BY PIECE · 2D BUILD</small><h1>撒下一座小镇 <span>房子慢慢长出来。</span></h1><p>先搭一座林窗书屋：窗前书桌、柔光台灯和层叠陈设。也可选择溪谷石木小屋，看小伙伴取石、砍木、拾枝和泥，搭出能生火、能睡觉的荒野庇护所。</p></div></header>
+    <header><div><small>PIECE BY PIECE · 2D BUILD</small><h1>撒下一座小镇 <span>房子慢慢长出来。</span></h1><p>在森林、溪谷或卡通小岛上搭起自己的家。小岛采用 45° RPG 视角，小伙伴砍树找石，逐件安装石木小屋与床铺、书架、餐桌和绿植。</p></div></header>
     <section class="choices" aria-label="选择房子"><div class="heading"><strong>01 / 选一处要建的房子</strong><span>开工前可以更换</span></div><div id="plans" class="cards"></div></section>
     <section class="site" aria-label="建造场景"><div class="site-title"><span id="title">准备开工</span><span id="progress">0 / 0</span></div><div class="view-controls"><span id="view-hint">放大后左键拖动平移 · 滚轮缩放</span><label>天气 <select id="weather"><option value="clear">晴天</option><option value="rain">雨天</option><option value="snow">雪天</option></select></label><button id="atmosphere-pause" type="button" aria-pressed="false">暂停氛围</button><button id="reset-view" type="button">恢复视角</button></div><canvas id="scene" width="960" height="608" aria-label="宠物逐件建造的像素剖面房屋" aria-describedby="view-hint"></canvas><div class="site-foot"><span id="message" aria-live="polite">先投入材料，再开始建造。</span><span id="status">本地自动存档</span></div></section>
     <section class="controls"><div class="heading"><strong id="supply-heading">02 / 撒材料，看它们搭建</strong><span id="supply-hint">缺料时现场会保留，补齐后继续</span></div><div class="buttons"><button data-material="W">＋8 木材 <b id="stock-W">0</b></button><button data-material="S">＋6 石材 <b id="stock-S">0</b></button><button data-material="C">＋2 布料 <b id="stock-C">0</b></button><button data-material="B" hidden>树枝 <b id="stock-B">0</b></button><button data-material="D" hidden>泥土 <b id="stock-D">0</b></button><button data-gather="S" hidden>收集石料</button><button data-gather="W" hidden>砍木截料</button><button data-gather="B" hidden>拾枝收草</button><button data-gather="D" hidden>取土和泥</button><button id="auto-gather" hidden>自动采集：开</button><button id="fill">补足这座房子的用料</button><label>速度 <select id="speed"><option value="1">×1 观看</option><option value="10">×10</option><option value="30">×30 验证</option></select></label><button id="play" class="primary">开始建造</button></div><p id="gather-status" class="gather-status" hidden></p><div class="foot"><span id="cost"></span><button id="reset">重新开始</button></div></section>

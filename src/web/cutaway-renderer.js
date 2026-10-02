@@ -304,6 +304,7 @@
   }
   function viewport(s,preview=false,camera=null){
     if(camera&&!preview)return camera;
+    if((s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint))?.construction?.view?.projection==='diagonal')return [0,0,480,304];
     if(siteScale(s)!==1)return [0,0,480,304];
     if(s.plan?.wilderness&&(preview||s.status==='done'))return [208,148,232,147];
     if(s.plan?.artStyle==='woodland-v3'&&(preview||s.status==='done'))return [104,144,272,160];
@@ -471,6 +472,9 @@
     c.restore();
   }
   function draw(canvas,s,clock=0,preview=false,camera=null,weather){
+    if((s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint))?.construction?.view?.projection==='diagonal'){
+      root.TownDiagonalRenderer.draw(canvas,s,clock,preview,camera,weather);return;
+    }
     if(!root.TownCutawayLighting?.render(canvas,s,clock,preview,camera)){
       if(canvas.dataset)canvas.dataset.lighting='canvas2d';
       drawBase(canvas,s,clock,preview,false,camera);

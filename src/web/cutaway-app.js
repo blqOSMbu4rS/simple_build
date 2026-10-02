@@ -62,7 +62,7 @@
     $('atmosphere-pause').setAttribute('aria-pressed',String(atmospherePaused));
     const wild=!!TownConstructionConfig.site(plan).gathering,g=state.wilderness,pose=TownWildGather.sample(g);
     document.querySelectorAll('[data-material]').forEach(b=>{b.hidden=!(plan.costs[b.dataset.material]>0)||(wild&&TownWildGather.kinds.includes(b.dataset.material));});
-    document.querySelectorAll('[data-gather]').forEach(b=>{b.hidden=!wild;b.disabled=!g||state.status==='done'||state.paused;});
+    document.querySelectorAll('[data-gather]').forEach(b=>{b.hidden=!wild||!(plan.costs[b.dataset.gather]>0);b.disabled=!g||state.status==='done'||state.paused;});
     $('auto-gather').hidden=!wild;$('auto-gather').disabled=!g||state.status==='done';
     $('auto-gather').textContent='自动采集：'+(g?.auto===false?'关':'开');
     $('fill').textContent=wild?'按需自动取材':'补足这座房子的用料';
@@ -86,7 +86,7 @@
     R.draw(canvas,{...state,plan:p,installed:p.parts},0,true);
     button.onclick=()=>{if(state.status!=='idle')return;selected=i;state.blueprint=p.id;resetView();update();persist();};
   }
-  Promise.all([TownCottageArt.ensure(state.plan||plans[selected]),TownWildernessArt.ensure(state.plan||plans[selected])]).then(()=>{
+  Promise.all([TownCottageArt.ensure(state.plan||plans[selected]),TownWildernessArt.ensure(state.plan||plans[selected]),...plans.map(p=>TownDiagonalRenderer.ensure(p))]).then(()=>{
     document.querySelectorAll('.card canvas').forEach((canvas,i)=>R.draw(canvas,{...state,plan:plans[i],installed:plans[i].parts},0,true));
   });
   for(const button of document.querySelectorAll('[data-material]'))button.onclick=()=>{E.addMaterials(state,button.dataset.material,{W:8,S:6,C:2}[button.dataset.material]);update();persist();};
