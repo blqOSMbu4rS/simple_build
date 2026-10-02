@@ -1,8 +1,8 @@
 (function(){
   'use strict';
   const E=TownEngine,R=TownCutawayRenderer,$=id=>document.getElementById(id),KEY='desktop-build-cutaway-study-v1';
-  const plans=E.BLUEPRINTS.filter(p=>p.residential&&p.gridBuild&&!['cutaway-window-cottage-v1','cutaway-window-cottage-v2','cutaway-creek-shelter-v1','cutaway-creek-shelter-v2','cutaway-creek-shelter-v3'].includes(p.sourcePlanId));let state=E.create(42),selected=0,clock=0,lastSave=0;
-  try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||p.sourcePlanId===data.selected||(/^cutaway-creek-shelter-v[123]/.test(String(data.selected))&&p.sourcePlanId==='cutaway-creek-shelter-v4')));if(state.status==='building'||state.status==='finishing')state.paused=true;}}
+  const plans=E.BLUEPRINTS.filter(p=>p.residential&&p.gridBuild&&!['cutaway-window-cottage-v1','cutaway-window-cottage-v2','cutaway-creek-shelter-v1','cutaway-creek-shelter-v2','cutaway-creek-shelter-v3','cutaway-creek-shelter-v4'].includes(p.sourcePlanId));let state=E.create(42),selected=0,clock=0,lastSave=0,weather=null,sceneryClock=0,atmospherePaused=false;
+  try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);weather=TownCutawayWeather.modes.includes(data.weather)?data.weather:null;sceneryClock=Number.isFinite(data.sceneryClock)&&data.sceneryClock>=0?data.sceneryClock:state.time;atmospherePaused=data.atmospherePaused===true;selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||p.sourcePlanId===data.selected||(/^cutaway-creek-shelter-v[1234]/.test(String(data.selected))&&p.sourcePlanId==='cutaway-creek-shelter-v5')));if(state.status==='building'||state.status==='finishing')state.paused=true;}}
   catch(err){console.warn('2D study restore:',err);state=E.create(42);}
   if(state.status==='idle')state.blueprint=plans[selected].id;
   // Camera belongs to this view, never to the construction state or saved plan.
@@ -41,7 +41,7 @@
     setCamera(x+px*w*(1-factor),y+py*h*(1-factor),w*factor,h*factor);
   },{passive:false});
   $('reset-view').onclick=resetView;
-  function persist(){try{localStorage.setItem(KEY,JSON.stringify({selected:plans[selected].id,state:E.save(state)}));lastSave=clock;}catch(err){$('status').textContent='自动保存不可用';console.warn(err);}}
+  function persist(){try{localStorage.setItem(KEY,JSON.stringify({selected:plans[selected].id,state:E.save(state),weather,sceneryClock,atmospherePaused}));lastSave=clock;}catch(err){$('status').textContent='自动保存不可用';console.warn(err);}}
   function update(){
     const plan=state.plan||plans[selected],inv=E.inventory(state);
     document.querySelectorAll('.card').forEach((el,i)=>{el.setAttribute('aria-pressed',String(i===selected));el.disabled=state.status!=='idle';});
@@ -57,6 +57,9 @@
     for(const k of E.MATERIAL_KINDS)$('stock-'+k).textContent=inv.free[k]+inv.reserved[k];
     $('play').textContent=state.status==='done'?'下一块空地 →':state.paused?'继续建造 ▶':state.status==='building'||state.status==='finishing'?'暂停 Ⅱ':state.status==='waiting'?(TownConstructionConfig.site(state.plan).gathering?'暂停采集 Ⅱ':'等待材料 · 继续'):'开始建造 ▶';
     $('speed').value=String(state.speed);
+    $('weather').value=TownCutawayWeather.mode(state,weather);
+    $('atmosphere-pause').textContent=atmospherePaused?'继续氛围':'暂停氛围';
+    $('atmosphere-pause').setAttribute('aria-pressed',String(atmospherePaused));
     const wild=!!TownConstructionConfig.site(plan).gathering,g=state.wilderness,pose=TownWildGather.sample(g);
     document.querySelectorAll('[data-material]').forEach(b=>{b.hidden=!(plan.costs[b.dataset.material]>0)||(wild&&TownWildGather.kinds.includes(b.dataset.material));});
     document.querySelectorAll('[data-gather]').forEach(b=>{b.hidden=!wild;b.disabled=!g||state.status==='done'||state.paused;});
@@ -107,16 +110,18 @@
     else{state.blueprint=plans[selected].id;E.start(state);}
     update();persist();
   };
+  $('weather').onchange=()=>{weather=$('weather').value;update();persist();};
+  $('atmosphere-pause').onclick=()=>{atmospherePaused=!atmospherePaused;update();persist();};
   $('speed').onchange=()=>{state.speed=Number($('speed').value);update();persist();};
   $('reset').onclick=()=>{state=E.create(42);state.blueprint=plans[selected].id;resetView();update();persist();};
-  let previous=performance.now(),acc=0,ui=0,sceneryClock=state.time;
+  let previous=performance.now(),acc=0,ui=0;
   function frame(now){
     const elapsed=Math.min((now-previous)/1000,.1);previous=now;
     if(!document.hidden){clock+=elapsed;acc+=elapsed*state.speed;
       const previousStatus=state.status;
       try{while(acc>=1/30){E.advance(state,1/30);acc-=1/30;}}catch(err){state.paused=true;state.message='施工暂停：'+err.message;console.error(err);}
-      if(!state.paused)sceneryClock+=elapsed;
-      R.draw(scene,state,sceneryClock,false,camera);
+      if(!state.paused&&!atmospherePaused)sceneryClock+=elapsed;
+      R.draw(scene,state,sceneryClock,false,camera,weather);
       ui+=elapsed;if(ui>.14){update();ui=0;}
       if(clock-lastSave>4||(state.status==='done'&&previousStatus!=='done'))persist();
     }requestAnimationFrame(frame);

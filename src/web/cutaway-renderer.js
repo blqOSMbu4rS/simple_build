@@ -38,15 +38,18 @@
     }
   }
   function foregroundStones(c,s,preview,clock=0){
-    const plan=s.plan;if(plan?.artStyle!=='creek-v2')return;
+    const plan=s.plan;if(!plan)return;
+    const fixedLip=plan.construction?.view?.foundationLip;
+    if(fixedLip===undefined&&plan.artStyle!=='creek-v2')return;
     const parts=preview?plan.parts:s.installed;
-    // A shallow foreground lip joins only installed footing/floor pairs.
-    // It occupies the bottom four pixels of that floor, not an unbuilt tile.
+    // Draw the shallow front lip only for installed foundation cells.
+    // Older plans keep their original floor-dependent presentation.
     for(const p of parts.filter(p=>(p.tileSource||p).kind==='foundation')){
-      const floor=parts.some(f=>(f.tileSource||f).kind==='earth'&&f.x===p.x&&f.y===p.y+1);
-      if(!floor){drawPart(c,p,plan,clock);continue;}
+      // New sites author a fixed lip: installing a floor cannot move laid stone.
+      const lip=fixedLip??(parts.some(f=>(f.tileSource||f).kind==='earth'&&f.x===p.x&&f.y===p.y+1)?4:0);
+      if(!lip){drawPart(c,p,plan,clock);continue;}
       const [x,y,w]=houseRect(p,plan);
-      c.save();c.beginPath();c.rect(x,y-4,w,20);c.clip();c.translate(0,-4);
+      c.save();c.beginPath();c.rect(x,y-lip,w,16+lip);c.clip();c.translate(0,-lip);
       drawPart(c,p,plan,clock);c.restore();
     }
   }
@@ -372,7 +375,7 @@
     const retreat=environmentPlan?.artStyle==='woodland-v3';
     const time=preview?0:Math.floor(clock*12)/12;
     const wilderness=environmentPlan?.wilderness;
-    if(wilderness)root.TownWildernessArt.environment(c,s,time);
+    if(wilderness&&root.TownWildernessArt)root.TownWildernessArt.environment(c,s,time);
     else {if(!retreat||!root.TownCottageArt?.environment(c))ground(c,time);scenery(c,time,retreat);}
     if(!preview){c.save();c.translate(0,worksite(s).view.stockOffsetY||0);stock(c,s);c.restore();}
     c.save();siteTransform(c,s);
@@ -388,7 +391,7 @@
       if(!preview&&motion?.visible&&!plan.gridBuild)layers.push({p:s.active.part,progress:1});
       // Legacy in-flight saves also hide their component until the task finishes.
       layers.sort((a,b)=>renderLayer(a.p,plan)-renderLayer(b.p,plan)||a.p.y-b.p.y);
-      for(const {p,progress}of layers){if(plan.artStyle==='creek-v2'&&(p.tileSource||p).kind==='foundation')continue;c.save();if(progress<1){const [x,y,w,h]=houseRect(p,style);c.beginPath();c.rect(x-8,y+h*(1-progress)-7,w+16,h*progress+15);c.clip();}if(plan.modular)modulePart(c,p,style,time);else drawPart(c,p,style,time);c.restore();}
+      for(const {p,progress}of layers){if((plan.construction?.view?.foundationLip!==undefined||plan.artStyle==='creek-v2')&&(p.tileSource||p).kind==='foundation')continue;c.save();if(progress<1){const [x,y,w,h]=houseRect(p,style);c.beginPath();c.rect(x-8,y+h*(1-progress)-7,w+16,h*progress+15);c.clip();}if(plan.modular)modulePart(c,p,style,time);else drawPart(c,p,style,time);c.restore();}
       foregroundStones(c,s,preview,time);
       windowGlass(c,s,preview,false,time);
     }
@@ -448,7 +451,7 @@
     c.save();c.scale(canvas.width/480,canvas.height/304);siteTransform(c,s);
     for(const p of [...(preview?plan.parts:s.installed)].sort((a,b)=>renderLayer(a,plan)-renderLayer(b,plan)||a.y-b.y)){
       const source=p.tileSource||p;
-      if(plan.artStyle==='creek-v2'&&source.kind==='foundation')continue;
+      if((plan.construction?.view?.foundationLip!==undefined||plan.artStyle==='creek-v2')&&source.kind==='foundation')continue;
       if(occluders&&(source.kind==='wall'||source.asset==='wall')){
         const [x,y,w,h]=houseRect(source,style);
         c.save();
@@ -467,10 +470,12 @@
     windowGlass(c,s,preview,true,clock);
     c.restore();
   }
-  function draw(canvas,s,clock=0,preview=false,camera=null){
-    if(root.TownCutawayLighting?.render(canvas,s,clock,preview,camera))return;
-    if(canvas.dataset)canvas.dataset.lighting='canvas2d';
-    drawBase(canvas,s,clock,preview,false,camera);
+  function draw(canvas,s,clock=0,preview=false,camera=null,weather){
+    if(!root.TownCutawayLighting?.render(canvas,s,clock,preview,camera)){
+      if(canvas.dataset)canvas.dataset.lighting='canvas2d';
+      drawBase(canvas,s,clock,preview,false,camera);
+    }
+    root.TownCutawayWeather?.draw(canvas,s,clock,preview,camera,weather);
   }
   root.TownCutawayRenderer={draw,drawBase,drawSurface,viewport,project,siteScale,drawComponent:modulePart,drawPart,smoke};
 })(globalThis);

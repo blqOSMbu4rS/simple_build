@@ -61,6 +61,23 @@
       part.buildAction=part.longTimber?'timber-lift':plan===current&&part.tileSource.id==='logs'?'team-lift':plan===timber&&part.tileSource.id==='chinking'?'seal':'install';
     }
   }
-  if(typeof module!=='undefined'&&module.exports)module.exports=timber;
-  else root.TownBlueprints.push(timber,current,v2,legacy);
+  // The first phase is a supported stove, including its flue. Remaining house
+  // work depends on it through data, without a special scheduler or scene branch.
+  const hearthFirst=JSON.parse(JSON.stringify(timber));
+  hearthFirst.id='cutaway-creek-shelter-v5-hearth-v1';hearthFirst.sourcePlanId='cutaway-creek-shelter-v5';
+  hearthFirst.signature=hearthFirst.silhouette=hearthFirst.id;
+  hearthFirst.description='先砌石炉，再搭小屋 · 冷雨与暖火';
+  hearthFirst.environment={weather:'rain',ground:[0,238,480,66]};
+  hearthFirst.construction.view.foundationLip=4;
+  const byKind=kind=>hearthFirst.parts.filter(p=>p.kind===kind);
+  const stove=byKind('hearth'),flue=byKind('flue'),base=byKind('foundation');
+  const footing=base.filter(p=>p.x>=stove[0].tileSource.x);
+  const remaining=base.filter(p=>!footing.includes(p));
+  footing.forEach((p,i)=>{p.deps=i?[footing[i-1].id]:[];p.label='铺好石炉承重底座';});
+  stove[0].deps=footing.map(p=>p.id);
+  remaining.forEach((p,i)=>{p.deps=i?[remaining[i-1].id]:flue.map(p=>p.id);});
+  const first=[...footing,...stove,...flue,...remaining];
+  hearthFirst.parts=[...first,...hearthFirst.parts.filter(p=>!first.includes(p))];
+  if(typeof module!=='undefined'&&module.exports)module.exports=hearthFirst;
+  else root.TownBlueprints.push(hearthFirst,timber,current,v2,legacy);
 })(globalThis);
