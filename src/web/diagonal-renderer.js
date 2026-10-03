@@ -74,12 +74,14 @@
   if(!preview){
    const pose=s.active&&root.TownCutawayMotion.sample(s.active),g=root.TownWildGather.sample(s.wilderness);
    for(const [i,p]of s.pets.entries()){
-    const [x,y]=actorPoint(plan,s,p,i),working=s.active?.workers.includes(i),gathering=i===(s.wilderness?.active?.worker??1)&&g;
+    let [x,y]=actorPoint(plan,s,p,i);if(v.petStyle?.pixelSnap){x=Math.round(x);y=Math.round(y);}
+    const working=s.active?.workers.includes(i),gathering=i===(s.wilderness?.active?.worker??1)&&g;
     const held=gathering?g.held:working?pose?.held:null,hammer=working&&pose?.hammer,walking=held||gathering||working;
     const [pw,ph]=v.petSize||[14,22],scale=ph/22;
     layers.push({depth:y+.1,draw:()=>{
      c.fillStyle='#38513733';c.beginPath();c.ellipse(x,y,pw*.43,2*scale,0,0,Math.PI*2);c.fill();
-     const bob=walking?Math.sin(s.time*8)*.65:0;sprite(c,v,i?'fox':'bunny',x,y+bob,pw,ph);
+     let bob=walking?Math.sin(s.time*8)*.65:0;if(v.petStyle?.pixelSnap)bob=Math.round(bob);
+     c.save();c.imageSmoothingEnabled=v.petStyle?.smoothing??true;sprite(c,v,i?'fox':'bunny',x,y+bob,pw,ph);c.restore();
      if(held){c.fillStyle=held==='S'?'#939b96':held==='B'?'#a89950':'#9e6338';c.fillRect(x+3*scale,y-10*scale,7*scale,4*scale);}
      if(hammer||gathering&&['chop','cut','collect-stone'].includes(g.phase)){
       c.save();c.translate(x+6*scale,y-12*scale);c.rotate(Math.sin(s.time*12)*.7);c.scale(scale,scale);c.fillStyle='#895a30';c.fillRect(0,-9,2,10);c.fillStyle='#626f77';c.fillRect(-3,-10,7,3);c.restore();
