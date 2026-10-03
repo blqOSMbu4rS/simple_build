@@ -1,8 +1,9 @@
 (function(){
   'use strict';
+  const replaces=(p,id)=>[].concat(p.replaces||[]).includes(id);
   const E=TownEngine,R=TownCutawayRenderer,$=id=>document.getElementById(id),KEY='desktop-build-cutaway-study-v1';
-  const plans=E.BLUEPRINTS.filter(p=>p.residential&&p.gridBuild&&!E.BLUEPRINTS.some(q=>q.replaces===p.id)&&!['cutaway-window-cottage-v1','cutaway-window-cottage-v2','cutaway-creek-shelter-v1','cutaway-creek-shelter-v2','cutaway-creek-shelter-v3','cutaway-creek-shelter-v4'].includes(p.sourcePlanId));let state=E.create(42),selected=0,clock=0,lastSave=0,weather=null,sceneryClock=0,atmospherePaused=false;
-  try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);weather=TownCutawayWeather.modes.includes(data.weather)?data.weather:null;sceneryClock=Number.isFinite(data.sceneryClock)&&data.sceneryClock>=0?data.sceneryClock:state.time;atmospherePaused=data.atmospherePaused===true;selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||p.replaces===data.selected||p.sourcePlanId===data.selected||(/^cutaway-creek-shelter-v[1234]/.test(String(data.selected))&&p.sourcePlanId==='cutaway-creek-shelter-v5')));if(state.status==='building'||state.status==='finishing')state.paused=true;}}
+  const plans=E.BLUEPRINTS.filter(p=>p.residential&&p.gridBuild&&!E.BLUEPRINTS.some(q=>replaces(q,p.id))&&!['cutaway-window-cottage-v1','cutaway-window-cottage-v2','cutaway-creek-shelter-v1','cutaway-creek-shelter-v2','cutaway-creek-shelter-v3','cutaway-creek-shelter-v4'].includes(p.sourcePlanId));let state=E.create(42),selected=0,clock=0,lastSave=0,weather=null,sceneryClock=0,atmospherePaused=false;
+  try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);weather=TownCutawayWeather.modes.includes(data.weather)?data.weather:null;sceneryClock=Number.isFinite(data.sceneryClock)&&data.sceneryClock>=0?data.sceneryClock:state.time;atmospherePaused=data.atmospherePaused===true;selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||replaces(p,data.selected)||p.sourcePlanId===data.selected||(/^cutaway-creek-shelter-v[1234]/.test(String(data.selected))&&p.sourcePlanId==='cutaway-creek-shelter-v5')));if(state.status==='building'||state.status==='finishing')state.paused=true;}}
   catch(err){console.warn('2D study restore:',err);state=E.create(42);}
   if(state.status==='idle')state.blueprint=plans[selected].id;
   // Camera belongs to this view, never to the construction state or saved plan.
@@ -75,7 +76,7 @@
     $('gather-status').hidden=!wild;
     $('gather-status').textContent=(state.paused?'已暂停 · ':'')+(pose?phases[pose.phase]:g?(state.status==='done'?'取材建造完成':'采集待命'):'开工后开始取材')+' · 库存 '+['W','S','B','D'].map(k=>E.LABELS[k]+' '+(inv.free[k]+inv.reserved[k])).join(' / ');
 
-    $('status').textContent=state.plan&&plans.some(p=>p.replaces===state.plan.id)?'旧版现场 · 重新开始或下一块空地使用新版':['cutaway-window-cottage-v1','cutaway-window-cottage-v2'].includes(state.plan?.sourcePlanId)?'旧版书屋 · 重新开始或下一块空地使用新版':state.plan&&!state.plan.residential?'旧版进度 · 重新开始可使用新版住宅':state.status==='done'?'房子完工了':state.status==='waiting'?'等待材料':state.paused?'施工暂停':'本地自动存档';
+    $('status').textContent=state.plan&&plans.some(p=>replaces(p,state.plan.id))?'旧版现场 · 重新开始或下一块空地使用新版':['cutaway-window-cottage-v1','cutaway-window-cottage-v2'].includes(state.plan?.sourcePlanId)?'旧版书屋 · 重新开始或下一块空地使用新版':state.plan&&!state.plan.residential?'旧版进度 · 重新开始可使用新版住宅':state.status==='done'?'房子完工了':state.status==='waiting'?'等待材料':state.paused?'施工暂停':'本地自动存档';
   }
   for(const [i,p]of plans.entries()){
     const button=document.createElement('button');button.type='button';button.className='card';button.setAttribute('aria-label','选择'+p.name);

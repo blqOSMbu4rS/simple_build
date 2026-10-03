@@ -11,13 +11,14 @@
    return pending.get(url);
   }));loads.set(v,promise);return promise;
  }
- function point(plan,p){const v=plan.construction.view,a=p.view;return [v.origin[0]+(a.u-a.v)*v.tile[0]/2,v.origin[1]+(a.u+a.v+1)*v.tile[1]/2-(a.z||0)];}
+ function project(plan,[u,w,z=0]){const v=plan.construction.view;return [v.origin[0]+(u-w)*v.tile[0]/2,v.origin[1]+(u+w)*v.tile[1]/2-z];}
+ function point(plan,p){const v=plan.construction.view,a=p.view;return a.anchor?project(plan,a.anchor):[v.origin[0]+(a.u-a.v)*v.tile[0]/2,v.origin[1]+(a.u+a.v+1)*v.tile[1]/2-(a.z||0)];}
  function pathPoint(plan,x){const a=plan.construction.view.path;let i=a.findIndex(p=>p[0]>=x);if(i<1)i=i===0?1:a.length-1;const l=a[i-1],r=a[i],t=Math.max(0,Math.min(1,(x-l[0])/(r[0]-l[0])));return [l[1]+(r[1]-l[1])*t,l[2]+(r[2]-l[2])*t];}
  function actorPoint(plan,s,p,index){
   const ground=pathPoint(plan,p.x),a=s.active;
   if(a?.workers.includes(index)&&a.target.y<272){
-   const t=Math.max(0,Math.min(1,(272-p.y)/(272-a.target.y))),dest=point(plan,a.part);
-   return [ground[0]+(dest[0]-ground[0])*t,ground[1]+(dest[1]+(a.part.view.z||0)-ground[1])*t];
+   const t=Math.max(0,Math.min(1,(272-p.y)/(272-a.target.y))),view=a.part.view,dest=view.standAnchor?project(plan,view.standAnchor):point(plan,a.part);
+   return [ground[0]+(dest[0]-ground[0])*t,ground[1]+(dest[1]+(view.standAnchor?0:view.z||0)-ground[1])*t];
   }return ground;
  }
  function sprite(c,v,key,x,y,w,h){
@@ -30,6 +31,18 @@
   if(a.skewY)c.transform(1,a.skewY,0,1,0,0);
   sprite(c,v,a.texture,0,a.skewY?Math.abs(a.skewY)*a.width/2:0,a.width,a.height);c.restore();
  }
+ function face(c,plan,f,joints){
+  if(f.hiddenBy&&joints?.has(JSON.stringify(f.hiddenBy)))return;
+  const [p0,p1,,p3]=f.points.map(p=>project(plan,p)),[u,w,du,dw]=f.uv||[0,0,1,1],img=images.get(plan.construction.view.textures[f.texture]);
+  // The three shared corners define an affine surface. No independent sprite trimming or shear.
+  const iw=img?.width||1,ih=img?.height||1,ax=(p1[0]-p0[0])/(du*iw),ay=(p1[1]-p0[1])/(du*iw),bx=(p3[0]-p0[0])/(dw*ih),by=(p3[1]-p0[1])/(dw*ih);
+  c.save();c.transform(ax,ay,bx,by,p0[0]-ax*u*iw-bx*w*ih,p0[1]-ay*u*iw-by*w*ih);
+  const x=u*iw,y=w*ih,width=du*iw,height=dw*ih,overlap=.006;
+  c.fillStyle=img?c.createPattern(img,'repeat'):'#bc9863';c.fillRect(x-overlap*iw,y-overlap*ih,width+2*overlap*iw,height+2*overlap*ih);
+  if(f.shade){c.globalAlpha=f.shade;c.fillStyle='#332411';c.fillRect(x-overlap*iw,y-overlap*ih,width+2*overlap*iw,height+2*overlap*ih);}c.restore();
+ }
+ function part(c,plan,p,joints){if(p.view.faces){for(const f of p.view.faces)face(c,plan,f,joints);}else{const [x,y]=point(plan,p);partSprite(c,plan.construction.view,p.view,x,y);}}
+ function depth(plan,p){const a=p.view,v=plan.construction.view;return (a.anchor?project(plan,[a.anchor[0],a.anchor[1],0])[1]:v.origin[1]+(a.u+a.v+1)*v.tile[1]/2)+(a.depthOffset||0);}
  function draw(canvas,s,clock=0,preview=false,camera=null,weather){
   const plan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint),v=plan.construction.view;
   ensure(plan);const c=canvas.getContext('2d'),[vx,vy,vw,vh]=preview||!camera?[0,0,480,304]:camera,time=preview?0:clock;
@@ -52,10 +65,11 @@
     if(tree?.felled&&tree.remaining>0&&!falling){c.fillStyle='#8f643b';c.fillRect(a.x+12,a.y-4,22,5);c.fillStyle='#dfb675';c.beginPath();c.ellipse(a.x+34,a.y-1.5,2.5,3,0,0,Math.PI*2);c.fill();}
    }});
   }
-  const parts=preview?plan.parts:s.installed;
+  let parts=preview?plan.parts:s.installed;const joints=new Set(parts.filter(p=>p.view.joint).map(p=>JSON.stringify(p.view.joint)));
+  if(parts.some(p=>p.view.faces))parts=[...parts.filter(p=>p.layer<2).sort((a,b)=>a.layer-b.layer||depth(plan,a)-depth(plan,b)),...parts.filter(p=>p.layer>=2)];
   for(const p of parts){const [x,y]=point(plan,p),a=p.view;
-   const paint=()=>{c.save();if(a.shadow){c.fillStyle='#31432c';c.globalAlpha=a.shadow.opacity;c.beginPath();c.ellipse(x,y-1,a.shadow.rx,a.shadow.ry,0,0,Math.PI*2);c.fill();c.globalAlpha=1;}partSprite(c,v,a,x,y);c.restore();};
-   if(p.layer<2)paint();else layers.push({depth:v.origin[1]+(a.u+a.v+1)*v.tile[1]/2+(a.depthOffset||0),draw:paint});
+   const paint=()=>{c.save();if(a.shadow){c.fillStyle='#31432c';c.globalAlpha=a.shadow.opacity;c.beginPath();c.ellipse(x,y-1,a.shadow.rx,a.shadow.ry,0,0,Math.PI*2);c.fill();c.globalAlpha=1;}part(c,plan,p,joints);c.restore();};
+   if(p.layer<2)paint();else layers.push({depth:depth(plan,p),draw:paint});
   }
   if(!preview){
    const pose=s.active&&root.TownCutawayMotion.sample(s.active),g=root.TownWildGather.sample(s.wilderness);
@@ -80,6 +94,6 @@
   c.restore();if(canvas.dataset)canvas.dataset.lighting='canvas2d-diagonal';
   root.TownCutawayWeather?.draw(canvas,s,time,preview,camera,weather);
  }
- function roofMask(c,plan,parts){const v=plan.construction.view;for(const p of parts){const [x,y]=point(plan,p);partSprite(c,v,p.view,x,y);}}
- root.TownDiagonalRenderer={ensure,draw,point,pathPoint,actorPoint,roofMask,get revision(){return revision;}};
+ function roofMask(c,plan,parts){for(const p of parts)part(c,plan,p);}
+ root.TownDiagonalRenderer={ensure,draw,point,project,pathPoint,actorPoint,roofMask,get revision(){return revision;}};
 })(globalThis);

@@ -1,42 +1,49 @@
-/* New scene revision is data only; the legacy plan and its saves remain intact. */
+/* Authored shared-edge surfaces; all construction and projection remain generic. */
 (function(root){
  'use strict';
- const old=typeof module!=='undefined'&&module.exports?require('./island-legacy-plans.js'):root.TownBlueprints.find(p=>p.id==='island-stonewood-v1');
- const plan=JSON.parse(JSON.stringify(old)),v=plan.construction.view;
- plan.id=plan.signature=plan.silhouette='island-stonewood-v2';plan.replaces=old.id;
- plan.description='45° RPG 小岛 · 石墙门窗 · 温暖室内';
- for(const key of ['floor','stone','wall-right','wall-left','front-right','front-left','door','window','beam-right','beam-left','steps','tools','bed','table','bookshelf','hearth','chest','rug','plant','barrel'])v.textures[key]='assets/island/v2/'+key+'.webp';
- delete v.textures.eave;
- v.background='assets/island/v2/environment.webp';v.origin=[235,90];v.tile=[40,20];v.weatherGround=205;v.petSize=[22,34];
- v.ripples=[{x:391,y:72,rx:8,ry:2},{x:62,y:288,rx:12,ry:2},{x:295,y:287,rx:10,ry:2}];
- v.path=[[0,78,160],[25,122,149],[35,122,156],[45,86,183],[68,142,198],[85,129,217],[90,133,209],[107,340,205],[110,351,208],[146,354,213],[185,368,208],[200,194,206],[240,220,212],[260,284,211],[290,325,198],[418,409,158],[430,390,97],[480,435,172]];
- v.scenery=[{texture:'tree',x:122,y:149,width:55,height:76,source:25},{texture:'tree',x:86,y:183,width:50,height:69,source:45},
-  {texture:'tree',x:129,y:217,width:47,height:65,source:85},{texture:'rock',x:407,y:159,width:29,height:24,resource:'S'},
-  {texture:'rock',x:422,y:170,width:21,height:18,resource:'S'}];
- for(const p of plan.parts){const a=p.view;
-  if(p.kind==='foundation'){a.height=30;a.shadow={rx:18,ry:5,opacity:.12};}
-  else if(p.kind==='floor'){a.z=10;a.height=22;}
-  else if(p.kind==='wall'){a.z=26;a.width=20;a.height=72;if(a.texture==='wall-left'){a.v+=.5;a.skewY=1;}else{a.u+=.5;a.skewY=-1;}}
-  else if(p.kind==='roof'){const left=a.flipX;a.texture=left?'beam-left':'beam-right';delete a.flipX;a.width=20;a.height=14;a.z=64;if(left)a.v+=.5;else a.u+=.5;}
-  else{a.z=11;if(p.kind!=='rug')a.shadow={rx:a.width*.3,ry:3,opacity:.16};}
+ const previous=typeof module!=='undefined'&&module.exports?require('./island-v2-plans.js'):root.TownBlueprints.find(p=>p.id==='island-stonewood-v2');
+ const plan=JSON.parse(JSON.stringify(previous)),v=plan.construction.view;
+ plan.id=plan.signature=plan.silhouette='island-stonewood-v3';plan.replaces=[previous.id,previous.replaces];
+ plan.description='45° RPG 小岛 · 连续石木结构 · 温暖室内';
+ const keys=['floor','stone','plaster','timber'];for(const key of keys)v.textures['surface-'+key]='assets/island/v3/'+key+'.webp';
+ // All corners use u/v grid coordinates and a common vertical height in display pixels.
+ function box(u0,v0,u1,v1,z0,z1,texture,top=texture){return [
+  {points:[[u0,v0,z1],[u1,v0,z1],[u1,v1,z1],[u0,v1,z1]],texture:top,uv:[u0,v0,u1-u0,v1-v0],shade:.02},
+  {points:[[u0,v1,z1],[u1,v1,z1],[u1,v1,z0],[u0,v1,z0]],texture,uv:[u0,-z1/20,u1-u0,(z1-z0)/20],shade:.12},
+  {points:[[u1,v1,z1],[u1,v0,z1],[u1,v0,z0],[u1,v1,z0]],texture,uv:[-v1,-z1/20,v1-v0,(z1-z0)/20],shade:.23}
+ ];}
+ const stone='surface-stone',wood='surface-timber',plaster='surface-plaster';
+ for(const p of plan.parts){const a=p.view,u=p.x,w=p.y;
+  if(['foundation','floor'].includes(p.kind)){
+   const floor=p.kind==='floor',z=floor?10:0,tag=floor?'floor':'base';a.anchor=[u+.5,w+.5,z];a.standAnchor=[u+.5,w+.5,z];a.joint=[u,w,z,tag];
+   a.faces=box(u,w,u+1,w+1,floor?8:0,floor?10:8,floor?wood:stone,floor?'surface-floor':stone);
+   if(floor)a.faces[0].uv=[u/2,w/2,.5,.5];
+   a.faces[1].hiddenBy=[u,w+1,z,tag];a.faces[2].hiddenBy=[u+1,w,z,tag];
+  }else if(p.kind==='wall'){
+   const back=p.material==='W',alongU=['wall-right','front-right'].includes(a.texture);
+   const u0=back?u:alongU?u:5.85,v0=back?w:alongU?4.85:w,u1=alongU?u0+1:u0+.15,v1=alongU?v0+.15:v0+1;
+   const tag=(back?'back':'front')+(alongU?'-u':'-v'),next=[alongU?u+1:u,alongU?w:w+1,10,tag];a.joint=[u,w,10,tag];
+   a.anchor=[(u0+u1)/2,(v0+v1)/2,10];a.standAnchor=[back?u+.5:Math.min(u+.5,5.5),back?w+.5:Math.min(w+.5,4.5),10];
+   a.faces=box(u0,v0,u1,v1,10,back?54:27,back?plaster:stone);a.faces[alongU?2:1].hiddenBy=next;
+   if(back){
+    const post=alongU?box(u0,v0,u0+.09,v1+.015,10,54,wood):box(u0,v0,u1+.015,v0+.09,10,54,wood);
+    const end=alongU?box(u1-.09,v0,u1,v1+.015,10,54,wood):box(u0,v1-.09,u1+.015,v1,10,54,wood);
+    for(const f of end)f.hiddenBy=next;a.faces.push(...post,...end);
+   }else a.faces.push(...box(u0,v0,u1,v1,27,29,wood));
+  }else if(p.kind==='roof'){
+   const alongU=a.texture==='beam-right';a.anchor=[u+.5,w+.5,54];a.standAnchor=[u+.5,w+.5,10];
+   a.faces=box(u,w,alongU?u+1:u+.19,alongU?w+.19:w+1,54,57,wood);
+  }else if(p.kind==='steps'){
+   a.anchor=[2.5,5.45,0];a.standAnchor=[2.5,5.7,0];
+   a.faces=[...box(2,5,3,5.45,0,7,stone),...box(2,5.45,3,5.9,0,3.5,stone)];
+  }else if(p.kind==='door')a.anchor=[2.5,5,10];
+  else if(p.kind==='window'){a.anchor=[.13,.8,30];a.width=22;a.height=26;}
+  else if(p.kind==='decoration')a.anchor=[2.5,.13,26];
+  else a.anchor=[a.u+.5,a.v+.5,a.z||0];
+  if(a.faces){delete a.shadow;delete a.skewY;delete a.flipX;}
  }
- const changes={bed:{u:.8,v:2.3,width:62,height:55},bookshelf:{u:1,v:.1,width:32,height:49},hearth:{u:4,v:.1,width:42,height:61},
-  rug:{u:3,v:2,width:66,height:37},table:{u:3.3,v:3,width:52,height:45},chest:{u:4.8,v:1,width:36,height:34},plant:{u:5,v:3,width:21,height:28},'bedside-plant':{u:.4,v:3,width:17,height:24}};
- for(const [id,data]of Object.entries(changes))Object.assign(plan.parts.find(p=>p.id===id).view,data);
- function add(id,kind,u,w,material,deps,texture,width,height,z=10,extra={}){
-  plan.parts.push({id,kind,x:u,y:w,w:1,h:1,material,cost:{[material]:1},deps,seconds:1.2,workers:1,required:true,buildAction:'install',layer:2,
-   label:'安装'+id,workPoint:{x:240+(u-w)*16,y:272-(u+w+1)*8},view:{u,v:w,z,texture,width,height,...extra}});
-  plan.costs[material]++;
- }
- // Edge sprites occupy one projected edge, not a full diamond: no overlaps across the doorway.
- for(let u=0;u<6;u++)if(u!==2)add('front-'+u,'wall',u,4,'S',['floor-'+u+'-4'],'front-right',20,30,5,{u:u-.5,skewY:-.15});
- for(let w=0;w<5;w++)add('edge-'+w,'wall',5,w,'S',['floor-5-'+w],'front-left',20,30,5,{v:w-.5,skewY:.15});
- add('远侧墙角','wall',0,0,'W',['floor-0-0'],'wall-left',20,72,26,{v:.5,skewY:1});
- add('墙角屋檐','roof',0,0,'B',['远侧墙角'],'beam-left',20,14,64,{v:.5});
- add('门','door',2,4,'W',['floor-2-4','front-1','front-3'],'door',22,43,5,{u:1.5});
- add('石台阶','steps',2,5,'S',['门'],'steps',29,23,-6,{u:2,v:4.7});
- add('小窗','window',0,1,'W',['side-1'],'window',24,28,32,{flipX:true,depthOffset:.2});
- add('工具架','decoration',2,0,'W',['back-2'],'tools',25,22,30,{depthOffset:.2});
- add('门外木桶','barrel',5,3,'W',['edge-3'],'barrel',23,29,0,{u:6.1,v:3.4,shadow:{rx:10,ry:3,opacity:.2}});
+ const used=new Set(plan.parts.flatMap(p=>p.view.faces?p.view.faces.map(f=>f.texture):[p.view.texture]));
+ for(const key of ['tree','stump','rock','bunny','fox'])used.add(key);
+ v.textures=Object.fromEntries(Object.entries(v.textures).filter(([key])=>used.has(key)));
  if(typeof module!=='undefined'&&module.exports)module.exports=plan;else root.TownBlueprints.push(plan);
 })(globalThis);
