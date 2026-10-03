@@ -50,7 +50,19 @@
   if(f.shade){c.globalAlpha=f.shade;c.fillStyle=f.shadeColor||'#332411';c.fillRect(x-overlap*iw,y-overlap*ih,width+2*overlap*iw,height+2*overlap*ih);}c.restore();
   if(f.outline){const q=(f.clipPoints||f.points).map(p=>project(plan,p));c.save();c.strokeStyle=f.outline.color;c.lineWidth=f.outline.width;c.lineJoin='round';c.lineCap='round';c.beginPath();for(const [a,b]of f.outline.edges||[[0,1],[1,2],[2,3],[3,0]]){c.moveTo(...q[a]);c.lineTo(...q[b]);}c.stroke();c.restore();}
  }
- function part(c,plan,p,joints){if(p.view.faces){for(const f of p.view.faces)face(c,plan,f,joints);}else{const [x,y]=point(plan,p);partSprite(c,plan.construction.view,p.view,x,y);}}
+ function surfaceSprite(c,plan,a){
+  const img=images.get(plan.construction.view.textures[a.texture]);if(!img)return;
+  const source=a.surface.uv.map(([u,w])=>[u*img.width,w*img.height]),target=a.surface.points.map(p=>project(plan,p));
+  c.save();polygon(c,target);c.clip();
+  for(const ids of [[0,1,2],[0,2,3]]){
+   const [s0,s1,s2]=ids.map(i=>source[i]),[t0,t1,t2]=ids.map(i=>target[i]);
+   const ux=s1[0]-s0[0],uy=s1[1]-s0[1],vx=s2[0]-s0[0],vy=s2[1]-s0[1],det=ux*vy-uy*vx;
+   const ax=((t1[0]-t0[0])*vy-(t2[0]-t0[0])*uy)/det,bx=((t2[0]-t0[0])*ux-(t1[0]-t0[0])*vx)/det;
+   const ay=((t1[1]-t0[1])*vy-(t2[1]-t0[1])*uy)/det,by=((t2[1]-t0[1])*ux-(t1[1]-t0[1])*vx)/det;
+   c.save();polygon(c,[t0,t1,t2],.25);c.clip();c.transform(ax,ay,bx,by,t0[0]-ax*s0[0]-bx*s0[1],t0[1]-ay*s0[0]-by*s0[1]);c.drawImage(img,0,0);c.restore();
+  }c.restore();
+ }
+ function part(c,plan,p,joints){if(p.view.faces){for(const f of p.view.faces)face(c,plan,f,joints);}else if(p.view.surface)surfaceSprite(c,plan,p.view);else{const [x,y]=point(plan,p);partSprite(c,plan.construction.view,p.view,x,y);}}
  function receiverPath(c,plan,parts){
   const faces=parts.filter(p=>p.view.receivesLight).flatMap(p=>p.view.faces||[]);if(!faces.length)return false;
   c.beginPath();for(const f of faces){const q=f.points.map(p=>project(plan,p));c.moveTo(...q[0]);for(const p of q.slice(1))c.lineTo(...p);c.closePath();}return true;
