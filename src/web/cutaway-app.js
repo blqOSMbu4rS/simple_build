@@ -2,10 +2,21 @@
   'use strict';
   const replaces=(p,id)=>[].concat(p.replaces||[]).includes(id);
   const E=TownEngine,R=TownCutawayRenderer,$=id=>document.getElementById(id),KEY='desktop-build-cutaway-study-v1';
-  const plans=E.BLUEPRINTS.filter(p=>p.residential&&p.gridBuild&&!E.BLUEPRINTS.some(q=>replaces(q,p.id))&&!['cutaway-window-cottage-v1','cutaway-window-cottage-v2','cutaway-creek-shelter-v1','cutaway-creek-shelter-v2','cutaway-creek-shelter-v3','cutaway-creek-shelter-v4'].includes(p.sourcePlanId));let state=E.create(42),selected=0,clock=0,lastSave=0,weather=null,sceneryClock=0,atmospherePaused=false;
-  try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);weather=TownCutawayWeather.modes.includes(data.weather)?data.weather:null;sceneryClock=Number.isFinite(data.sceneryClock)&&data.sceneryClock>=0?data.sceneryClock:state.time;atmospherePaused=data.atmospherePaused===true;selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||replaces(p,data.selected)||p.sourcePlanId===data.selected||(/^cutaway-creek-shelter-v[1234]/.test(String(data.selected))&&p.sourcePlanId==='cutaway-creek-shelter-v5')));if(state.status==='building'||state.status==='finishing')state.paused=true;}}
-  catch(err){console.warn('2D study restore:',err);state=E.create(42);}
+  const plans=E.BLUEPRINTS.filter(p=>p.residential&&p.gridBuild&&!E.BLUEPRINTS.some(q=>replaces(q,p.id))&&!['cutaway-window-cottage-v1','cutaway-window-cottage-v2','cutaway-creek-shelter-v1','cutaway-creek-shelter-v2','cutaway-creek-shelter-v3','cutaway-creek-shelter-v4'].includes(p.sourcePlanId));let state=E.create(42),selected=Math.max(0,plans.findIndex(p=>p.construction?.experience)),clock=0,lastSave=0,weather=null,sceneryClock=0,atmospherePaused=false;
+  let muted=false,devSpeed=1,loadError=false;
+  const sound=TownExperienceUI.audio();
+  try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);muted=data.muted===true;weather=TownCutawayWeather.modes.includes(data.weather)?data.weather:null;sceneryClock=Number.isFinite(data.sceneryClock)&&data.sceneryClock>=0?data.sceneryClock:state.time;atmospherePaused=data.atmospherePaused===true;selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||replaces(p,data.selected)||p.sourcePlanId===data.selected||(/^cutaway-creek-shelter-v[1234]/.test(String(data.selected))&&p.sourcePlanId==='cutaway-creek-shelter-v5')));if(state.status==='building'||state.status==='finishing'||state.status==='waiting')state.paused=true;}}
+  catch(err){console.warn('2D study restore:',err);loadError=true;state=E.create(42);}
   if(state.status==='idle')state.blueprint=plans[selected].id;
+  if(state.speed>2){devSpeed=state.speed;state.speed=1;}
+  sound.mute(muted);
+  // Account for elapsed time before applying a control; catch-up cannot be reinterpreted by a later setting.
+  const timer=TownSessionClock.create(performance.now());let catching=false,eventSeq=state.experience?.sequence||0,feedbackUntil=0;
+  const running=()=>!state.paused&&['building','waiting','finishing'].includes(state.status);
+  function capture(){const dt=TownSessionClock.capture(timer,performance.now(),running(),devSpeed*(state.experience?1:state.speed));clock+=dt;if(!state.paused&&!atmospherePaused)sceneryClock+=dt;return dt;}
+  function settle(){capture();catching=TownSessionClock.pump(timer,state,E);return !catching;}
+  document.addEventListener('click',event=>{if(catching||!settle()){event.preventDefault();event.stopImmediatePropagation();return;}if(!muted&&!document.hidden)sound.unlock();},true);
+  document.addEventListener('change',event=>{if(catching||!settle()){event.stopImmediatePropagation();update();}},true);
   // Camera belongs to this view, never to the construction state or saved plan.
   const scene=$('scene');let camera=null,drag=null;
   const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
@@ -21,16 +32,26 @@
   scene.addEventListener('pointerdown',event=>{
     if(event.button!==0||drag)return;
     const view=R.viewport(state,false,camera);
-    drag={id:event.pointerId,x:event.clientX,y:event.clientY,view:[...view]};
+    if(!settle())return;
+    if(!muted)sound.unlock();drag={id:event.pointerId,x:event.clientX,y:event.clientY,view:[...view],moved:false};
     scene.setPointerCapture(event.pointerId);scene.classList.add('dragging');event.preventDefault();
   });
   scene.addEventListener('pointermove',event=>{
     if(!drag||drag.id!==event.pointerId)return;
+    if(Math.hypot(event.clientX-drag.x,event.clientY-drag.y)>6)drag.moved=true;
+    if(!drag.moved)return;
     const rect=scene.getBoundingClientRect(),[x,y,w,h]=drag.view;
     setCamera(x-(event.clientX-drag.x)*w/rect.width,y-(event.clientY-drag.y)*h/rect.height,w,h);
   });
   for(const type of ['pointerup','pointercancel','lostpointercapture'])scene.addEventListener(type,event=>{
-    if(drag?.id===event.pointerId)endDrag();
+    if(drag?.id===event.pointerId){
+      if(type==='pointerup'&&!drag.moved&&!catching){
+        const rect=scene.getBoundingClientRect(),[x,y,w,h]=drag.view;
+        const point=[x+(event.clientX-rect.left)*w/rect.width,y+(event.clientY-rect.top)*h/rect.height];
+        const resource=TownExperienceUI.hit(TownConstructionConfig.site(state.plan).view.resources,point);
+        if(resource&&TownWildGather.manual(state,resource.kind,resource.source)){update();persist();}
+      }endDrag();
+    }
   });
   window.addEventListener('blur',endDrag);
   scene.addEventListener('wheel',event=>{
@@ -42,7 +63,7 @@
     setCamera(x+px*w*(1-factor),y+py*h*(1-factor),w*factor,h*factor);
   },{passive:false});
   $('reset-view').onclick=resetView;
-  function persist(){try{localStorage.setItem(KEY,JSON.stringify({selected:plans[selected].id,state:E.save(state),weather,sceneryClock,atmospherePaused}));lastSave=clock;}catch(err){$('status').textContent='自动保存不可用';console.warn(err);}}
+  function persist(){if(loadError)return;try{localStorage.setItem(KEY,JSON.stringify({selected:plans[selected].id,state:E.save(state),weather,sceneryClock,atmospherePaused,muted}));lastSave=clock;}catch(err){$('status').textContent='自动保存不可用';console.warn(err);}}
   function update(){
     const plan=state.plan||plans[selected],inv=E.inventory(state);
     document.querySelectorAll('.card').forEach((el,i)=>{el.setAttribute('aria-pressed',String(i===selected));el.disabled=state.status!=='idle';});
@@ -57,11 +78,15 @@
     $('cost').textContent='总用料 '+Object.entries(plan.costs).filter(([,n])=>n).map(([k,n])=>`${E.LABELS[k]} ${n}`).join(' · ')+(state.missing?' · 当前缺 '+Object.entries(state.missing.amounts).map(([k,n])=>`${E.LABELS[k]} ${n}`).join('、'):'');
     for(const k of E.MATERIAL_KINDS)$('stock-'+k).textContent=inv.free[k]+inv.reserved[k];
     $('play').textContent=state.status==='done'?'下一块空地 →':state.paused?'继续建造 ▶':state.status==='building'||state.status==='finishing'?'暂停 Ⅱ':state.status==='waiting'?(TownConstructionConfig.site(state.plan).gathering?'暂停采集 Ⅱ':'等待材料 · 继续'):'开始建造 ▶';
-    $('speed').value=String(state.speed);
+    $('speed').value=String(state.experience?.multiplier||state.speed);
+    $('dev-speed').value=String(devSpeed);
+    $('speed').querySelector('[value="2"]').disabled=!TownConstructionConfig.site(plan).experience;
+    $('mute').textContent=muted?'开启声音':'静音';$('mute').setAttribute('aria-pressed',String(muted));
     $('weather').value=TownCutawayWeather.mode(state,weather);
     $('atmosphere-pause').textContent=atmospherePaused?'继续氛围':'暂停氛围';
     $('atmosphere-pause').setAttribute('aria-pressed',String(atmospherePaused));
     const wild=!!TownConstructionConfig.site(plan).gathering,g=state.wilderness,pose=TownWildGather.sample(g);
+    const materialParent=wild?$('developer-buttons'):$('gather-controls');if($('materials').parentElement!==materialParent)materialParent.prepend($('materials'));
     document.querySelectorAll('[data-material]').forEach(b=>{b.hidden=!(plan.costs[b.dataset.material]>0)||(wild&&TownWildGather.kinds.includes(b.dataset.material));});
     document.querySelectorAll('[data-gather]').forEach(b=>{b.hidden=!wild||!(plan.costs[b.dataset.gather]>0);b.disabled=!g||state.status==='done'||state.paused;});
     $('auto-gather').hidden=!wild;$('auto-gather').disabled=!g||state.status==='done';
@@ -75,8 +100,21 @@
       pickup:'拿起截好的木料','team-pickup':'两人抬起截好的圆木','team-carry':'两人把圆木搬回料堆'};
     $('gather-status').hidden=!wild;
     $('gather-status').textContent=(state.paused?'已暂停 · ':'')+(pose?phases[pose.phase]:g?(state.status==='done'?'取材建造完成':'采集待命'):'开工后开始取材')+' · 库存 '+['W','S','B','D'].map(k=>E.LABELS[k]+' '+(inv.free[k]+inv.reserved[k])).join(' / ');
+    const exp=TownConstructionConfig.site(plan).experience,manual=g?.feed?.manual;
+    if(exp){
+      $('auto-gather').hidden=true;
+      $('supply-heading').textContent='02 / 安心观看，偶尔搭把手';
+      $('supply-hint').textContent='正常施工自动供料 · 点选树木或石头可帮助双倍施工';
+      document.querySelectorAll('[data-gather]').forEach(b=>{b.hidden=!TownConstructionConfig.site(plan).gathering.supply.manual[b.dataset.gather];b.disabled=!g||state.status==='done'||state.paused||!!manual||catching;});
+      if(manual)$('gather-status').textContent+=' · 采集中 '+Math.floor(manual.elapsed/manual.seconds*100)+'%';
+    }
+    $('cancel-gather').hidden=!manual;$('cancel-gather').disabled=catching;
 
     $('status').textContent=state.plan&&plans.some(p=>replaces(p,state.plan.id))?'旧版现场 · 重新开始或下一块空地使用新版':['cutaway-window-cottage-v1','cutaway-window-cottage-v2'].includes(state.plan?.sourcePlanId)?'旧版书屋 · 重新开始或下一块空地使用新版':state.plan&&!state.plan.residential?'旧版进度 · 重新开始可使用新版住宅':state.status==='done'?'房子完工了':state.status==='waiting'?'等待材料':state.paused?'施工暂停':'本地自动存档';
+    if(catching)$('status').textContent='正在推进离开期间的建造…';
+    else if(state.experience&&state.status==='waiting'&&!state.paused)$('status').textContent='材料正在送来';
+    $('play').disabled=loadError;
+    if(loadError)$('status').textContent='存档未能读取，原记录已保留；重新开始会先备份原记录';
   }
   for(const [i,p]of plans.entries()){
     const button=document.createElement('button');button.type='button';button.className='card';button.setAttribute('aria-label','选择'+p.name);
@@ -85,17 +123,18 @@
     const desc=document.createElement('small');desc.textContent=p.description;
     button.append(canvas,title,desc);$('plans').append(button);
     R.draw(canvas,{...state,plan:p,installed:p.parts},0,true);
-    button.onclick=()=>{if(state.status!=='idle')return;selected=i;state.blueprint=p.id;resetView();update();persist();};
+    button.onclick=()=>{if(state.status!=='idle')return;selected=i;state.blueprint=p.id;if(!TownConstructionConfig.site(p).experience)state.speed=1;resetView();update();persist();};
   }
   Promise.all([TownCottageArt.ensure(state.plan||plans[selected]),TownWildernessArt.ensure(state.plan||plans[selected]),...plans.map(p=>TownDiagonalRenderer.ensure(p))]).then(()=>{
     document.querySelectorAll('.card canvas').forEach((canvas,i)=>R.draw(canvas,{...state,plan:plans[i],installed:plans[i].parts},0,true));
   });
   for(const button of document.querySelectorAll('[data-material]'))button.onclick=()=>{E.addMaterials(state,button.dataset.material,{W:8,S:6,C:2}[button.dataset.material]);update();persist();};
-  document.querySelectorAll('[data-gather]').forEach(b=>b.onclick=()=>{TownWildGather.request(state,b.dataset.gather);update();persist();});
+  document.querySelectorAll('[data-gather]').forEach(b=>b.onclick=()=>{if(state.experience)TownWildGather.manual(state,b.dataset.gather);else TownWildGather.request(state,b.dataset.gather);update();persist();});
+  $('cancel-gather').onclick=()=>{TownWildGather.cancel(state);update();persist();};
   $('auto-gather').onclick=()=>{if(state.wilderness)state.wilderness.auto=!state.wilderness.auto;update();persist();};
   $('fill').onclick=()=>{
     if(state.status==='done')return;
-    if(TownConstructionConfig.site(state.plan||plans[selected]).gathering){if(!state.plan)E.start(state);state.wilderness.auto=true;update();persist();return;}
+    if(TownConstructionConfig.site(state.plan||plans[selected]).gathering&&!state.experience){if(!state.plan)E.start(state);state.wilderness.auto=true;update();persist();return;}
     const plan=state.plan||plans[selected],inv=E.inventory(state);
     for(const k of E.MATERIAL_KINDS){
       const committed=state.installed.reduce((n,p)=>n+(p.cost[k]||0),0)+(state.active?.part.cost[k]||0);
@@ -105,7 +144,7 @@
     update();persist();
   };
   $('play').onclick=()=>{
-    if(state.status==='done'){E.next(state);state.blueprint=plans[selected].id;resetView();}
+    if(state.status==='done'){E.next(state);eventSeq=0;state.blueprint=plans[selected].id;resetView();}
     else if(state.status==='building'||state.status==='finishing')state.paused=!state.paused;
     else if(state.status==='waiting'){state.paused=TownConstructionConfig.site(state.plan).gathering?!state.paused:false;}
     else{state.blueprint=plans[selected].id;E.start(state);}
@@ -113,20 +152,29 @@
   };
   $('weather').onchange=()=>{weather=$('weather').value;update();persist();};
   $('atmosphere-pause').onclick=()=>{atmospherePaused=!atmospherePaused;update();persist();};
-  $('speed').onchange=()=>{state.speed=Number($('speed').value);update();persist();};
-  $('reset').onclick=()=>{state=E.create(42);state.blueprint=plans[selected].id;resetView();update();persist();};
-  let previous=performance.now(),acc=0,ui=0;
+  $('speed').onchange=()=>{E.setMultiplier(state,Number($('speed').value));update();persist();};
+  $('dev-speed').onchange=()=>{devSpeed=Number($('dev-speed').value);};
+  $('mute').onclick=()=>{muted=!muted;sound.mute(muted);if(!muted)sound.unlock();update();persist();};
+  $('reset').onclick=()=>{if(loadError){try{localStorage.setItem(KEY+'-unreadable-'+Date.now(),localStorage.getItem(KEY));loadError=false;}catch(err){$('status').textContent='原存档备份失败，尚未覆盖';return;}}state=E.create(42);state.blueprint=plans[selected].id;eventSeq=0;timer.debt=0;resetView();update();persist();};
+  let ui=0,frameId=0;
+  function schedule(){if(!frameId&&!document.hidden)frameId=requestAnimationFrame(frame);}
   function frame(now){
-    const elapsed=Math.min((now-previous)/1000,.1);previous=now;
-    if(!document.hidden){clock+=elapsed;acc+=elapsed*state.speed;
+    frameId=0;
+    if(!document.hidden){const elapsed=capture();
       const previousStatus=state.status;
-      try{while(acc>=1/30){E.advance(state,1/30);acc-=1/30;}}catch(err){state.paused=true;state.message='施工暂停：'+err.message;console.error(err);}
-      if(!state.paused&&!atmospherePaused)sceneryClock+=elapsed;
+      const wasCatching=catching;
+      try{catching=TownSessionClock.pump(timer,state,E);}catch(err){state.paused=true;timer.debt=0;state.message='施工暂停：'+err.message;console.error(err);}
+      const events=state.experience?.events.filter(e=>e.seq>eventSeq)||[];eventSeq=state.experience?.sequence||0;
+      if(!wasCatching&&!catching)for(const e of events){if(!state.paused&&devSpeed===1)sound.play(e.type);if(e.text){$('feedback').textContent=e.text;$('feedback').hidden=false;feedbackUntil=now+4500;}}
+      if(now>feedbackUntil)$('feedback').hidden=true;
       R.draw(scene,state,sceneryClock,false,camera,weather);
+      if(state.experience&&state.status!=='done')TownExperienceUI.markers(scene,TownConstructionConfig.site(state.plan).view.resources,R.viewport(state,false,camera),state.wilderness?.feed?.manual);
       ui+=elapsed;if(ui>.14){update();ui=0;}
       if(clock-lastSave>4||(state.status==='done'&&previousStatus!=='done'))persist();
-    }requestAnimationFrame(frame);
+      if(wasCatching&&!catching){update();persist();}
+    }schedule();
   }
-  document.addEventListener('visibilitychange',()=>{previous=performance.now();acc=0;if(document.hidden)persist();});
-  state.blueprint=state.plan?.id||plans[selected].id;update();requestAnimationFrame(frame);
+  document.addEventListener('visibilitychange',()=>{capture();if(document.hidden){cancelAnimationFrame(frameId);frameId=0;sound.suspend();persist();}else{catching=timer.debt>=1/30;eventSeq=state.experience?.sequence||0;sound.wake();schedule();}});
+  window.addEventListener('pagehide',()=>{capture();TownSessionClock.pump(timer,state,E);persist();});
+  state.blueprint=state.plan?.id||plans[selected].id;update();schedule();
 })();

@@ -115,6 +115,16 @@
       pets:[{x:170,y:GROUND},{x:194,y:GROUND}],message:'先选一些材料，再开始你的小屋。',log:[],dirty:false};
   }
   function note(s,text) { s.message=text; s.log.unshift({time:s.time,text});s.log=s.log.slice(0,8); }
+  function feedback(s,type,text=''){
+    if(!s.experience)return;const x=s.experience;
+    x.events.push({seq:++x.sequence,type,text,time:s.time});x.events=x.events.slice(-8);
+  }
+  function setMultiplier(s,value){
+    if(![1,2].includes(value))return false;
+    if(s.experience&&value===2&&s.missing){value=1;feedback(s,'normal','储备暂时用完了，材料送来后可再次选择双倍。');}
+    if(s.experience)s.experience.multiplier=value;else s.speed=value;
+    return true;
+  }
   function addMaterials(s,kind,units) {
     if(!MATERIAL_KINDS.includes(kind)||!Number.isInteger(units)||units<1||units>100)return false;
     if(s.materials.filter(m=>m.kind===kind&&m.state!=='installed').length+units>240) {note(s,'这类材料已经堆满了，先让小伙伴用掉一些吧。');return false;}
@@ -150,7 +160,9 @@
   function start(s) {
     if(s.status!=='idle'&&s.status!=='waiting')return false;
     if(!s.plan&&s.blueprint==='modular'){s.plan=preview(s);s.status='building';s.paused=false;s.startedAt=s.time;s.dirty=false;note(s,'构件组合已确定，开始逐件搭建；缺料时会等你补齐。');return true;}
-    if(!s.plan&&s.blueprint){s.plan=clone(BLUEPRINTS.find(p=>p.id===s.blueprint)||BLUEPRINTS[0]);CONFIG.validate(s.plan);GATHER?.create(s);s.status='building';s.paused=false;s.startedAt=s.time;s.dirty=false;note(s,'按图纸开工：缺少材料时会停下来等你。');return true;}
+    if(!s.plan&&s.blueprint){s.plan=clone(BLUEPRINTS.find(p=>p.id===s.blueprint)||BLUEPRINTS[0]);CONFIG.validate(s.plan);
+      if(CONFIG.site(s.plan).experience)s.experience={version:1,multiplier:s.speed===2?2:1,stage:0,sequence:0,events:[]};
+      GATHER?.create(s,api);s.status='building';s.paused=false;s.startedAt=s.time;s.dirty=false;note(s,s.experience?'开工啦。材料会自动送来，安心看房子慢慢长出来。':'按图纸开工：缺少材料时会停下来等你。');return true;}
     s.status='waiting';s.paused=false;s.startedAt=s.time;replan(s);
     if(s.plan)note(s,'开工啦！先整理材料，慢慢打好地基。');return !!s.plan;
   }
@@ -164,7 +176,9 @@
     if(s.plan.template){
       const budget=available(s),missing={};
       for(const k of MATERIAL_KINDS)if((c.cost[k]||0)>budget[k])missing[k]=c.cost[k]-budget[k];
-      if(Object.keys(missing).length){s.status='waiting';s.missing={module:c.id,label:taskLabel(c),cost:c.cost,amounts:missing};note(s,`等待材料：${taskLabel(c)}还缺 `+Object.entries(missing).map(([k,n])=>`${LABELS[k]} ${n} 份`).join('、')+'。补齐后自动继续。');return;}
+      if(Object.keys(missing).length){
+        if(s.experience?.multiplier===2){s.experience.multiplier=1;feedback(s,'normal','储备暂时用完了，已恢复正常施工。材料会自动送来。');}
+        s.status='waiting';s.missing={module:c.id,label:taskLabel(c),cost:c.cost,amounts:missing};note(s,`等待材料：${taskLabel(c)}还缺 `+Object.entries(missing).map(([k,n])=>`${LABELS[k]} ${n} 份`).join('、')+'。补齐后自动继续。');return;}
       const assigned=[];
       for(const k of MATERIAL_KINDS)assigned.push(...s.materials.filter(m=>m.state==='free'&&m.kind===k).slice(0,c.cost[k]||0));
       for(const m of assigned){m.state='soft';m.owner=c.id;m.building=s.building;}
@@ -209,7 +223,7 @@
     GATHER?.advance(s,dt,api);
     if(s.dirty)replan(s);
     if(s.active) {
-      const a=s.active;a.elapsed+=dt;
+      const a=s.active,phase=a.phase;a.elapsed+=dt*(s.experience?.multiplier||1);
       if(MOT?.accepts(a)){
         const pose=MOT.sample(a);a.phase=pose.phase;
         if(pose.team)pose.pets.forEach((p,i)=>{s.pets[i]={...p};});
@@ -229,10 +243,13 @@
         if(index===5){pet.x=a.target.x+offset;pet.y=a.target.y;}
       }
       }
+      if(a.phase!==phase&&['deliver','install','align'].includes(a.phase))feedback(s,a.phase==='deliver'?'drop':'hammer');
       if(a.elapsed>=a.total) {
         s.installed.push(a.part);
         for(const id of a.materialIds){const m=s.materials.find(m=>m.id===id);m.state='installed';}
         s.active=null;s.dirty=true;
+        const stages=CONFIG.site(s.plan).experience?.stages||[];
+        while(s.experience&&s.experience.stage<stages.length&&stages[s.experience.stage].parts.every(id=>s.installed.some(p=>p.id===id))){feedback(s,'stage',stages[s.experience.stage].label);s.experience.stage++;}
       }
       return;
     }
@@ -249,12 +266,13 @@
     }
     if(list.some(c=>!done.has(c.id)))throw Error('Construction dependency deadlock');
     if(s.status==='building') {replan(s);if(s.plan.parts.some(c=>!done.has(c.id)))return;finishPlan(s);}
-    else {s.status='done';s.completedAt=s.time;s.pets=CONFIG.site(s.plan).rest;note(s,'小屋完工啦。坐一会儿，再去下一块空地吧。');}
+    else {GATHER?.cancel(s);s.status='done';s.completedAt=s.time;s.pets=CONFIG.site(s.plan).rest;feedback(s,'complete','小屋完工啦，坐一会儿。');note(s,'小屋完工啦。坐一会儿，再去下一块空地吧。');}
   }
   function next(s) {
     if(s.status!=='done')return false;
     s.history.push({number:s.building,plan:clone(s.plan),parts:clone(s.installed)});
     delete s.wilderness;
+    delete s.experience;
     s.building++;s.plan=null;s.installed=[];s.active=null;s.decorations=[];s.status='idle';s.decision=0;s.roofChecked=false;s.completedAt=null;s.paused=false;s.dirty=false;s.missing=null;s.blueprint='modular';s.layoutChoice=0;
     s.pets=[{x:170,y:GROUND},{x:194,y:GROUND}];note(s,'余料已经带来了，新的一间会是什么样呢？');return true;
   }
@@ -265,7 +283,7 @@
   }
   function validate(s) {
     if(!s||s.version!==1||!Number.isInteger(s.seed)||!Number.isFinite(s.time)||s.time<0||!Number.isInteger(s.building)||s.building<1||!Array.isArray(s.materials)||s.materials.length>100000)throw Error('存档格式不兼容');
-    if(!['idle','waiting','building','finishing','done'].includes(s.status)||![1,10,30].includes(s.speed)||typeof s.paused!=='boolean')throw Error('存档状态无效');
+    if(!['idle','waiting','building','finishing','done'].includes(s.status)||![1,2,10,30].includes(s.speed)||typeof s.paused!=='boolean')throw Error('存档状态无效');
     if(!Array.isArray(s.installed)||!Array.isArray(s.history)||!Array.isArray(s.batches)||!Array.isArray(s.decorations)||!Array.isArray(s.pets)||s.pets.length!==2)throw Error('存档结构无效');
     if(s.layoutChoice!==undefined&&(!Number.isInteger(s.layoutChoice)||s.layoutChoice<0||s.layoutChoice>=1000000))throw Error('组合编号损坏');
     const ids=new Set();for(const m of s.materials){if(!Number.isInteger(m.id)||ids.has(m.id)||!MATERIAL_KINDS.includes(m.kind)||!['free','soft','hard','installed'].includes(m.state))throw Error('材料账本损坏');ids.add(m.id);}
@@ -334,11 +352,16 @@
       const definition=[...b.plan.parts,...b.decorations].find(c=>c.id===m.owner);
       if(!definition||!(definition.cost[m.kind]>0)||(m.building!==s.building&&m.state!=='installed'))throw Error('材料归属不合法');
     }
+    const experience=CONFIG.site(s.plan).experience;
+    if(!!experience!==!!s.experience)throw Error('体验版本缺失');
+    if(s.experience){const x=s.experience,stages=experience.stages||[];
+      if(x.version!==1||![1,2].includes(x.multiplier)||!Number.isInteger(x.stage)||x.stage<0||x.stage>stages.length||stages.slice(0,x.stage).some(a=>!a.parts.every(id=>currentIds.has(id)))||!Number.isInteger(x.sequence)||x.sequence<0||!Array.isArray(x.events)||x.events.length>8||x.events.some((e,i)=>!Number.isInteger(e.seq)||e.seq<1||e.seq>x.sequence||(i&&e.seq<=x.events[i-1].seq)||!['drop','hammer','stage','complete','normal','gather'].includes(e.type)||typeof e.text!=='string'||!Number.isFinite(e.time)||e.time<0||e.time>s.time))throw Error('体验进度损坏');
+    }
     GATHER?.validate(s);
     return true;
   }
   function save(s) { validate(s);return JSON.stringify(s); }
   function restore(text) { if(text.length>12000000)throw Error('存档过大');const s=JSON.parse(text);if(s.status==='idle')s.blueprint='modular';else if(s.blueprint===undefined)s.blueprint='blueprint-castle';if(s.speed===.5||s.speed===1.5)s.speed=1;validate(s);return s; }
-  const api={KINDS,MATERIAL_KINDS,LABELS,GRID,GROUND,ORIGIN,CATALOG,BLUEPRINTS,create,preview,shuffle,addMaterials,start,advance,next,inventory,score,feasible,choose,reserve,validate,save,restore,taskLabel,hash};
+  const api={KINDS,MATERIAL_KINDS,LABELS,GRID,GROUND,ORIGIN,CATALOG,BLUEPRINTS,create,preview,shuffle,addMaterials,start,advance,next,inventory,score,feasible,choose,reserve,validate,save,restore,taskLabel,hash,feedback,setMultiplier};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.TownEngine=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

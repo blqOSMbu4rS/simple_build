@@ -27,6 +27,12 @@
    !['W','S','B','D'].every(k=>Number.isFinite(g.sources?.[k])&&g.sources[k]>=0&&g.sources[k]<=480)||
    (g.trees!==undefined&&!Array.isArray(g.trees))||![g.water,g.mix,...(g.trees||[])].every(x=>Number.isFinite(x)&&x>=0&&x<=480)))throw Error('采集配置损坏');
   const v=config.view,pair=p=>Array.isArray(p)&&p.length===2&&p.every(Number.isFinite);
+  const exp=config.experience,feed=g?.supply;
+  if(exp&&(exp.version!==1||!g||!feed||exp.stages!==undefined&&(!Array.isArray(exp.stages)||exp.stages.some(a=>typeof a.label!=='string'||!Array.isArray(a.parts)||a.parts.some(id=>!plan.parts.some(p=>p.id===id))))))throw Error('体验配置损坏');
+  if(feed){
+   if(!exp||feed.version!==1||!['W','S','B','D'].every(k=>{const a=feed.kinds?.[k];return a&&Number.isInteger(a.buffer)&&a.buffer>=0&&a.buffer<=100&&Number.isInteger(a.cap)&&a.cap>=2&&a.cap<=240&&a.buffer<=a.cap&&Number.isInteger(a.batch)&&a.batch>=1&&a.batch<=a.cap&&a.batch<=100&&Array.isArray(a.periods)&&a.periods.length>0&&a.periods.every(n=>Number.isFinite(n)&&n>0);})||!feed.manual||Object.entries(feed.manual).some(([k,a])=>!['W','S','B','D'].includes(k)||!Number.isInteger(a.units)||a.units<1||a.units>100||!Number.isFinite(a.seconds)||a.seconds<=0))throw Error('供料配置损坏');
+  }
+  if(v.resources!==undefined&&(!Array.isArray(v.resources)||v.resources.some(a=>!['W','S','B','D'].includes(a.kind)||!pair(a.point)||!Number.isFinite(a.radius)||a.radius<=0||a.source!==undefined&&!g?.trees?.includes(a.source))))throw Error('资源交互配置损坏');
   if(!Number.isFinite(v.scale)||v.scale<=0||!pair(v.anchor)||!pair(v.display)||!Number.isFinite(v.mudDepth)||
    !Array.isArray(v.travel)||v.travel.some((p,i)=>!pair(p)||(i>0&&p[0]<=v.travel[i-1][0])))throw Error('施工显示配置损坏');
   for(const part of plan.parts){
