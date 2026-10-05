@@ -33,10 +33,18 @@
   if(v.fitViewport!==undefined&&typeof v.fitViewport!=='boolean')throw Error('视口适配配置损坏');
   if(v.renderOnChange!==undefined&&typeof v.renderOnChange!=='boolean')throw Error('显示更新配置损坏');
   if(v.geometry&&(!Array.isArray(v.geometry)||v.geometry.some(a=>!a.view)))throw Error('固定几何配置损坏');
+  if(v.sectionMode!==undefined&&v.sectionMode!=='horizontal')throw Error('剖切模式配置损坏');
   if(v.levels){
    if(!Array.isArray(v.levels)||!v.levels.length||new Set(v.levels.map(a=>a.id)).size!==v.levels.length||v.levels.some(a=>typeof a.id!=='string'||!a.id||typeof a.label!=='string'||typeof a.name!=='string'||!Number.isFinite(a.elevation)||a.camera&&(!Array.isArray(a.camera)||a.camera.length!==4||!a.camera.every(Number.isFinite)||a.camera[2]<=0||a.camera[3]<=0)))throw Error('楼层配置损坏');
    if(plan.parts.some(p=>!v.levels.some(a=>a.id===p.view?.level)))throw Error('构件楼层缺失');
    if(v.terrain?.some(t=>!v.levels.some(a=>a.id===t.view?.level)||!plan.parts.some(p=>p.id===t.clearBy&&action(p)==='excavate')))throw Error('开挖地形配置损坏');
+   if(v.sectionMode==='horizontal'&&v.levels.some(a=>!['storey','roof'].includes(a.role)||a.role==='storey'&&(!Number.isFinite(a.cutElevation)||a.cutElevation<=a.elevation)||a.role==='roof'&&a.cutElevation!==null))throw Error('水平剖切层配置损坏');
+  }
+  if(v.sectionMode==='horizontal'&&!v.levels)throw Error('水平剖切缺少楼层');
+  for(const a of [...plan.parts,...(v.geometry||[]),...(v.terrain||[])]){
+   const view=a.view,solid=view?.sectionSolid,range=view?.zRange;
+   if(range&&(!pair(range)||range[0]>=range[1]))throw Error('构件高度范围损坏');
+   if(solid&&(!pair(solid.zRange)||solid.zRange[0]>=solid.zRange[1]||!Array.isArray(solid.footprint)||solid.footprint.length!==4||!solid.footprint.every(pair)))throw Error('剖切实体配置损坏');
   }
   const exp=config.experience,feed=g?.supply;
   if(exp&&(exp.version!==1||!g||!feed||exp.stages!==undefined&&(!Array.isArray(exp.stages)||exp.stages.some(a=>typeof a.label!=='string'||!Array.isArray(a.parts)||a.parts.some(id=>!plan.parts.some(p=>p.id===id))))))throw Error('体验配置损坏');

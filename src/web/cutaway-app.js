@@ -48,7 +48,7 @@
     const height=Math.round(scene.width/aspect);if(scene.height!==height)scene.height=height;
     scene.style.imageRendering=plan.construction?.view?.worldSize?'auto':'pixelated';
     const fit=plan.construction?.view?.fitViewport;
-    scene.style.maxWidth=fit&&!floor?'calc(max(240px, 100dvh - 200px) * '+aspect+')':'';
+    scene.style.maxWidth=fit&&(!floor||plan.construction.view.sectionMode==='horizontal')?'calc(max(240px, 100dvh - 200px) * '+aspect+')':'';
     scene.style.marginInline=fit?'auto':'';
     $('floor-status').hidden=!levels.length;
     $('floor-status').textContent=(floor?floor.label+' · '+floor.name:'总览 · 全部楼层')+' · '+items.filter(p=>done.has(p.id)).length+'/'+items.length;
