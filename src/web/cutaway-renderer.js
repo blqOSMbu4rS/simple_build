@@ -471,9 +471,9 @@
     windowGlass(c,s,preview,true,clock);
     c.restore();
   }
-  function draw(canvas,s,clock=0,preview=false,camera=null,weather){
+  function draw(canvas,s,clock=0,preview=false,camera=null,weather,level=null){
     if((s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint))?.construction?.view?.projection==='diagonal'){
-      root.TownDiagonalRenderer.draw(canvas,s,clock,preview,camera,weather);return;
+      root.TownDiagonalRenderer.draw(canvas,s,clock,preview,camera,weather,level);return;
     }
     if(!root.TownCutawayLighting?.render(canvas,s,clock,preview,camera)){
       if(canvas.dataset)canvas.dataset.lighting='canvas2d';

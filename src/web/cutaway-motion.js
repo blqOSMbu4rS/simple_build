@@ -2,9 +2,9 @@
 (function(root){
  'use strict';
  const CONFIG=typeof module!=='undefined'&&module.exports?require('./construction-config.js'):root.TownConstructionConfig;
- const VERSION='cutaway-haul-v1',TEAM_VERSION='cutaway-timber-v1',LONG_VERSION='cutaway-whole-timber-v1',MUD_VERSION='cutaway-chinking-v1';
+ const VERSION='cutaway-haul-v1',TEAM_VERSION='cutaway-timber-v1',LONG_VERSION='cutaway-whole-timber-v1',MUD_VERSION='cutaway-chinking-v1',DIG_VERSION='cutaway-excavate-v1';
  const isTeam=a=>a?.motion===TEAM_VERSION||a?.motion===LONG_VERSION;
- const accepts=a=>a?.motion===VERSION||a?.motion===MUD_VERSION||isTeam(a);
+ const accepts=a=>a?.motion===VERSION||a?.motion===MUD_VERSION||a?.motion===DIG_VERSION||isTeam(a);
  const {isTimber,isChinking}=CONFIG;
  const supply=(kind,site=CONFIG.site())=>({x:site.piles[kind],y:site.ground});
  function timeline(part,ids,kinds,start,target,site=CONFIG.site()){
@@ -13,6 +13,14 @@
   function add(phase,to,seconds,unit,held=false){
    steps.push({phase,from:{...at},to:{...to},seconds,start:time,unit,held});
    time+=seconds;at={...to};
+  }
+  if(CONFIG.action(part)==='excavate'){
+   add('descend',{x:at.x,y:GROUND},Math.abs(GROUND-at.y)/90,0);
+   add('approach',{x:target.x,y:GROUND},Math.max(.2,Math.abs(target.x-at.x)/85),0);
+   add('enter',target,Math.abs(GROUND-target.y)/90,0);
+   add('excavate',target,part.seconds,0);
+   add('reveal',target,.45,0);
+   return {steps,total:time};
   }
   ids.forEach((id,unit)=>{
    const pile=supply(kinds[unit],site);
@@ -74,9 +82,9 @@
   const ids=materials.map(m=>m.id),kinds=materials.map(m=>m.kind);
   const whole=team&&!!part.longTimber;
   const route=team?timberTimeline(starts,target,whole?part:null,site):mud?mudTimeline(part,ids,starts[worker],target,site):timeline(part,ids,kinds,starts[worker],target,site);
-  return {motion:whole?LONG_VERSION:team?TEAM_VERSION:mud?MUD_VERSION:VERSION,id:part.id,part:JSON.parse(JSON.stringify(part)),workers:team?[0,1]:[worker],
+  return {motion:CONFIG.action(part)==='excavate'?DIG_VERSION:whole?LONG_VERSION:team?TEAM_VERSION:mud?MUD_VERSION:VERSION,id:part.id,part:JSON.parse(JSON.stringify(part)),workers:team?[0,1]:[worker],
    site:JSON.parse(JSON.stringify(site)),materialIds:ids,materialKinds:kinds,starts:starts.map(p=>({...p})),target,
-   supply:whole?{x:site.timberPile,y:site.ground}:supply(kinds[0],site),elapsed:0,phase:route.steps[0].phase,
+   supply:CONFIG.action(part)==='excavate'?{x:target.x,y:site.ground}:whole?{x:site.timberPile,y:site.ground}:supply(kinds[0],site),elapsed:0,phase:route.steps[0].phase,
    durations:route.steps.map(s=>s.seconds),total:route.total};
  }
  function sample(a){
@@ -100,12 +108,12 @@
    held:step.held?(mud?step.held:a.materialKinds[step.unit]):null,mud,
    mixDepth:mud?(step.phase==='to-mix'?progress:['mix','load-mud'].includes(step.phase)?1:step.phase==='carry'?1-progress:0):0,
    materialId:step.held?a.materialIds[step.unit]:null,
-   delivered:step.unit,hammer:step.phase==='install',
-   visible:step.phase==='reveal',smoke:mud?0:step.phase==='install'?1:step.phase==='reveal'?1-progress:0};
+   delivered:step.unit,excavating:a.motion===DIG_VERSION,hammer:['install','excavate'].includes(step.phase),
+   visible:step.phase==='reveal',smoke:mud?0:['install','excavate'].includes(step.phase)?1:step.phase==='reveal'?1-progress:0};
  }
  function validate(a,materials){
   const team=isTeam(a),whole=a.motion===LONG_VERSION;
-  if(!accepts(a)||a.workers.length!==(team?2:1)||!Array.isArray(a.materialKinds)||a.materialKinds.length!==a.materialIds.length||!a.materialIds.length)throw Error('搬运任务损坏');
+  if(!accepts(a)||a.workers.length!==(team?2:1)||!Array.isArray(a.materialKinds)||a.materialKinds.length!==a.materialIds.length||(a.motion===DIG_VERSION?a.materialIds.length!==0||CONFIG.action(a.part)!=='excavate':!a.materialIds.length))throw Error('搬运任务损坏');
   if(team&&(JSON.stringify(a.workers)!=='[0,1]'||a.materialIds.length!==(whole?2:1)||a.materialKinds.some(k=>k!=='W')||!isTimber(null,a.part)))throw Error('合抬原木任务损坏');
   if(whole&&(!a.part.longTimber||!Number.isFinite(a.part.longTimber.length)||a.part.longTimber.length<=8||!Number.isFinite(a.part.longTimber.diameter)||a.part.longTimber.diameter<=0))throw Error('整根圆木规格损坏');
   if(a.motion===MUD_VERSION&&(!isChinking(null,a.part)||a.materialIds.length!==1||a.materialKinds[0]!=='D'))throw Error('泥封任务损坏');
@@ -113,6 +121,6 @@
   const route=team?timberTimeline(a.starts,a.target,whole?a.part:null,a.site):a.motion===MUD_VERSION?mudTimeline(a.part,a.materialIds,a.starts[a.workers[0]],a.target,a.site):timeline(a.part,a.materialIds,a.materialKinds,a.starts[a.workers[0]],a.target,a.site);
   if(JSON.stringify(a.durations)!==JSON.stringify(route.steps.map(s=>s.seconds))||Math.abs(a.total-route.total)>.001)throw Error('搬运时间损坏');
  }
- const api={VERSION,TEAM_VERSION,LONG_VERSION,MUD_VERSION,accepts,isTeam,isTimber,isChinking,create,sample,validate};
+ const api={VERSION,TEAM_VERSION,LONG_VERSION,MUD_VERSION,DIG_VERSION,accepts,isTeam,isTimber,isChinking,create,sample,validate};
  if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.TownCutawayMotion=api;
 })(globalThis);

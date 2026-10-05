@@ -27,6 +27,11 @@
    !['W','S','B','D'].every(k=>Number.isFinite(g.sources?.[k])&&g.sources[k]>=0&&g.sources[k]<=480)||
    (g.trees!==undefined&&!Array.isArray(g.trees))||![g.water,g.mix,...(g.trees||[])].every(x=>Number.isFinite(x)&&x>=0&&x<=480)))throw Error('采集配置损坏');
   const v=config.view,pair=p=>Array.isArray(p)&&p.length===2&&p.every(Number.isFinite);
+  if(v.levels){
+   if(!Array.isArray(v.levels)||!v.levels.length||new Set(v.levels.map(a=>a.id)).size!==v.levels.length||v.levels.some(a=>typeof a.id!=='string'||!a.id||typeof a.label!=='string'||typeof a.name!=='string'||!Number.isFinite(a.elevation)||a.camera&&(!Array.isArray(a.camera)||a.camera.length!==4||!a.camera.every(Number.isFinite)||a.camera[2]<=0||a.camera[3]<=0)))throw Error('楼层配置损坏');
+   if(plan.parts.some(p=>!v.levels.some(a=>a.id===p.view?.level)))throw Error('构件楼层缺失');
+   if(v.terrain?.some(t=>!v.levels.some(a=>a.id===t.view?.level)||!plan.parts.some(p=>p.id===t.clearBy&&action(p)==='excavate')))throw Error('开挖地形配置损坏');
+  }
   const exp=config.experience,feed=g?.supply;
   if(exp&&(exp.version!==1||!g||!feed||exp.stages!==undefined&&(!Array.isArray(exp.stages)||exp.stages.some(a=>typeof a.label!=='string'||!Array.isArray(a.parts)||a.parts.some(id=>!plan.parts.some(p=>p.id===id))))))throw Error('体验配置损坏');
   if(feed){
@@ -36,7 +41,8 @@
   if(!Number.isFinite(v.scale)||v.scale<=0||!pair(v.anchor)||!pair(v.display)||!Number.isFinite(v.mudDepth)||
    !Array.isArray(v.travel)||v.travel.some((p,i)=>!pair(p)||(i>0&&p[0]<=v.travel[i-1][0])))throw Error('施工显示配置损坏');
   for(const part of plan.parts){
-   if(!['install','team-lift','timber-lift','seal'].includes(action(part))||part.workPoint&&!point(part.workPoint))throw Error('施工动作配置损坏');
+   if(!['install','team-lift','timber-lift','seal','excavate'].includes(action(part))||part.workPoint&&!point(part.workPoint))throw Error('施工动作配置损坏');
+   if(action(part)==='excavate'&&Object.values(part.cost).some(n=>n!==0))throw Error('开挖不应消耗建筑材料');
    if(isTimber(plan,part)&&(Object.keys(part.cost).some(k=>k!=='W'&&part.cost[k])||part.cost.W!==(action(part)==='timber-lift'?2:1)))throw Error('合抬材料配置损坏');
    if(action(part)==='timber-lift'&&(!part.longTimber||!Number.isFinite(part.longTimber.length)||part.longTimber.length<=8||!Number.isFinite(part.longTimber.diameter)||part.longTimber.diameter<=0))throw Error('圆木任务配置损坏');
    if(action(part)==='seal'&&(part.cost.D!==1||Object.values(part.cost).reduce((a,b)=>a+b,0)!==1))throw Error('泥封任务配置损坏');

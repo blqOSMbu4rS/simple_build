@@ -3,9 +3,9 @@
   const replaces=(p,id)=>[].concat(p.replaces||[]).includes(id);
   const E=TownEngine,R=TownCutawayRenderer,$=id=>document.getElementById(id),KEY='desktop-build-cutaway-study-v1';
   const plans=E.BLUEPRINTS.filter(p=>p.residential&&p.gridBuild&&!E.BLUEPRINTS.some(q=>replaces(q,p.id))&&!['cutaway-window-cottage-v1','cutaway-window-cottage-v2','cutaway-creek-shelter-v1','cutaway-creek-shelter-v2','cutaway-creek-shelter-v3','cutaway-creek-shelter-v4'].includes(p.sourcePlanId));let state=E.create(42),selected=Math.max(0,plans.findIndex(p=>p.construction?.experience)),clock=0,lastSave=0,weather=null,sceneryClock=0,atmospherePaused=false;
-  let muted=false,devSpeed=1,loadError=false;
+  let muted=false,devSpeed=1,loadError=false,selectedLevel=null,levelPlan=null;
   const sound=TownExperienceUI.audio();
-  try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);muted=data.muted===true;weather=TownCutawayWeather.modes.includes(data.weather)?data.weather:null;sceneryClock=Number.isFinite(data.sceneryClock)&&data.sceneryClock>=0?data.sceneryClock:state.time;atmospherePaused=data.atmospherePaused===true;selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||replaces(p,data.selected)||p.sourcePlanId===data.selected||(/^cutaway-creek-shelter-v[1234]/.test(String(data.selected))&&p.sourcePlanId==='cutaway-creek-shelter-v5')));if(state.status==='building'||state.status==='finishing'||state.status==='waiting')state.paused=true;}}
+  try{const saved=localStorage.getItem(KEY);if(saved){const data=JSON.parse(saved);state=E.restore(data.state);muted=data.muted===true;selectedLevel=typeof data.selectedLevel==='string'?data.selectedLevel:null;weather=TownCutawayWeather.modes.includes(data.weather)?data.weather:null;sceneryClock=Number.isFinite(data.sceneryClock)&&data.sceneryClock>=0?data.sceneryClock:state.time;atmospherePaused=data.atmospherePaused===true;selected=Math.max(0,plans.findIndex(p=>p.id===data.selected||replaces(p,data.selected)||p.sourcePlanId===data.selected||(/^cutaway-creek-shelter-v[1234]/.test(String(data.selected))&&p.sourcePlanId==='cutaway-creek-shelter-v5')));if(state.status==='building'||state.status==='finishing'||state.status==='waiting')state.paused=true;}}
   catch(err){console.warn('2D study restore:',err);loadError=true;state=E.create(42);}
   if(state.status==='idle')state.blueprint=plans[selected].id;
   if(state.speed>2){devSpeed=state.speed;state.speed=1;}
@@ -28,7 +28,25 @@
     if(drag&&scene.hasPointerCapture(drag.id))scene.releasePointerCapture(drag.id);
     drag=null;scene.classList.remove('dragging');
   }
-  function resetView(){endDrag();camera=null;}
+  function resetView(){endDrag();camera=(state.plan||plans[selected]).construction?.view?.levels?.find(a=>a.id===selectedLevel)?.camera?.slice()||null;}
+  function updateLevels(plan){
+    const levels=plan.construction?.view?.levels||[],nav=$('floor-controls');nav.hidden=!levels.length;
+    if(levelPlan!==plan.id){
+      levelPlan=plan.id;
+      if(!levels.some(a=>a.id===selectedLevel))selectedLevel=null;
+      nav.replaceChildren();
+      for(const a of [{id:null,label:'总览',name:'完整场景'},...levels]){
+        const b=document.createElement('button');b.type='button';b.dataset.level=a.id||'';
+        b.textContent=a.label;b.title=a.name;b.setAttribute('aria-label',a.label+' · '+a.name);
+        b.onclick=()=>{selectedLevel=a.id;resetView();update();persist();};nav.append(b);
+      }
+    }
+    for(const b of nav.children)b.setAttribute('aria-pressed',String((b.dataset.level||null)===selectedLevel));
+    const floor=levels.find(a=>a.id===selectedLevel),items=plan.parts.filter(p=>!floor||p.view?.level===floor.id),done=new Set(state.installed.map(p=>p.id));
+    $('floor-status').hidden=!levels.length;
+    $('floor-status').textContent=(floor?floor.label+' · '+floor.name:'总览 · 全部楼层')+' · '+items.filter(p=>done.has(p.id)).length+'/'+items.length;
+    if(floor&&state.active&&state.active.part.view.level!==floor.id)$('floor-status').textContent+=' · 正在其他楼层施工';
+  }
   scene.addEventListener('pointerdown',event=>{
     if(event.button!==0||drag)return;
     const view=R.viewport(state,false,camera);
@@ -49,7 +67,7 @@
         const rect=scene.getBoundingClientRect(),[x,y,w,h]=drag.view;
         const point=[x+(event.clientX-rect.left)*w/rect.width,y+(event.clientY-rect.top)*h/rect.height];
         const resource=TownExperienceUI.hit(TownConstructionConfig.site(state.plan).view.resources,point);
-        if(resource&&TownWildGather.manual(state,resource.kind,resource.source)){update();persist();}
+        if((selectedLevel===null||selectedLevel===state.plan?.construction.view.surfaceLevel)&&resource&&TownWildGather.manual(state,resource.kind,resource.source)){update();persist();}
       }endDrag();
     }
   });
@@ -63,18 +81,19 @@
     setCamera(x+px*w*(1-factor),y+py*h*(1-factor),w*factor,h*factor);
   },{passive:false});
   $('reset-view').onclick=resetView;
-  function persist(){if(loadError)return;try{localStorage.setItem(KEY,JSON.stringify({selected:plans[selected].id,state:E.save(state),weather,sceneryClock,atmospherePaused,muted}));lastSave=clock;}catch(err){$('status').textContent='自动保存不可用';console.warn(err);}}
+  function persist(){if(loadError)return;try{localStorage.setItem(KEY,JSON.stringify({selected:plans[selected].id,state:E.save(state),weather,sceneryClock,atmospherePaused,muted,selectedLevel}));lastSave=clock;}catch(err){$('status').textContent='自动保存不可用';console.warn(err);}}
   function update(){
     const plan=state.plan||plans[selected],inv=E.inventory(state);
+    updateLevels(plan);
     document.querySelectorAll('.card').forEach((el,i)=>{el.setAttribute('aria-pressed',String(i===selected));el.disabled=state.status!=='idle';});
     $('title').textContent=(state.plan?'正在建造：':'准备建造：')+plan.name;
     $('progress').textContent=`${state.installed.length} / ${state.plan?.parts.length||plan.parts.length} ${plan.wholeTimber?'件':'块'}`;
     const action=TownCutawayMotion.accepts(state.active)?TownCutawayMotion.sample(state.active):null;
-    const actionLabels={descend:'返回料堆',fetch:'前往料堆',pickup:'拿起一块材料',carry:'搬运一块材料',climb:'搬往高处施工点',deliver:'放下材料',install:'敲打建造中',reveal:'烟雾散去，方块完成',
+    const actionLabels={descend:'返回料堆',fetch:'前往料堆',pickup:'拿起一块材料',carry:'搬运一块材料',climb:'搬往施工点',deliver:'放下材料',install:'敲打建造中',reveal:'烟雾散去，方块完成',
       'team-pickup':'两人握住圆木两端','team-carry':'两人合抬圆木到墙下',stage:'在墙下放稳圆木',lift:'两人从地面抬升圆木',align:'对齐并固定原木墙',
-      'to-mix':'把泥料送到前景和泥盆',mix:'在和泥盆搅拌泥料','load-mud':'装好一桶湿泥',seal:'用泥抹封圆木之间的缝隙'};
+      'to-mix':'把泥料送到前景和泥盆',mix:'在和泥盆搅拌泥料','load-mud':'装好一桶湿泥',seal:'用泥抹封圆木之间的缝隙',approach:'走向开挖入口',enter:'进入山体作业点',excavate:'挥镐挖开山体'};
     const mudLabels={carry:'提泥桶到墙边',climb:'把湿泥送到上层墙缝',deliver:'放好泥桶',reveal:'这段圆木墙缝已封好'};
-    $('message').textContent=action?(state.paused?'已暂停 · ':'')+(action.mud&&mudLabels[action.phase]||actionLabels[action.phase])+' · '+state.active.part.label+' · 已送达 '+action.delivered+'/'+state.active.materialIds.length:state.message;
+    $('message').textContent=action?(state.paused?'已暂停 · ':'')+(action.mud&&mudLabels[action.phase]||actionLabels[action.phase])+' · '+state.active.part.label+(action.excavating?' · 不消耗建材':' · 已送达 '+action.delivered+'/'+state.active.materialIds.length):state.message;
     $('cost').textContent='总用料 '+Object.entries(plan.costs).filter(([,n])=>n).map(([k,n])=>`${E.LABELS[k]} ${n}`).join(' · ')+(state.missing?' · 当前缺 '+Object.entries(state.missing.amounts).map(([k,n])=>`${E.LABELS[k]} ${n}`).join('、'):'');
     for(const k of E.MATERIAL_KINDS)$('stock-'+k).textContent=inv.free[k]+inv.reserved[k];
     $('play').textContent=state.status==='done'?'下一块空地 →':state.paused?'继续建造 ▶':state.status==='building'||state.status==='finishing'?'暂停 Ⅱ':state.status==='waiting'?(TownConstructionConfig.site(state.plan).gathering?'暂停采集 Ⅱ':'等待材料 · 继续'):'开始建造 ▶';
@@ -123,7 +142,7 @@
     const desc=document.createElement('small');desc.textContent=p.description;
     button.append(canvas,title,desc);$('plans').append(button);
     R.draw(canvas,{...state,plan:p,installed:p.parts},0,true);
-    button.onclick=()=>{if(state.status!=='idle')return;selected=i;state.blueprint=p.id;if(!TownConstructionConfig.site(p).experience)state.speed=1;resetView();update();persist();};
+    button.onclick=()=>{if(state.status!=='idle')return;selected=i;selectedLevel=null;state.blueprint=p.id;if(!TownConstructionConfig.site(p).experience)state.speed=1;resetView();update();persist();};
   }
   Promise.all([TownCottageArt.ensure(state.plan||plans[selected]),TownWildernessArt.ensure(state.plan||plans[selected]),...plans.map(p=>TownDiagonalRenderer.ensure(p))]).then(()=>{
     document.querySelectorAll('.card canvas').forEach((canvas,i)=>R.draw(canvas,{...state,plan:plans[i],installed:plans[i].parts},0,true));
@@ -167,8 +186,8 @@
       const events=state.experience?.events.filter(e=>e.seq>eventSeq)||[];eventSeq=state.experience?.sequence||0;
       if(!wasCatching&&!catching)for(const e of events){if(!state.paused&&devSpeed===1)sound.play(e.type);if(e.text){$('feedback').textContent=e.text;$('feedback').hidden=false;feedbackUntil=now+4500;}}
       if(now>feedbackUntil)$('feedback').hidden=true;
-      R.draw(scene,state,sceneryClock,false,camera,weather);
-      if(state.experience&&state.status!=='done')TownExperienceUI.markers(scene,TownConstructionConfig.site(state.plan).view.resources,R.viewport(state,false,camera),state.wilderness?.feed?.manual);
+      R.draw(scene,state,sceneryClock,false,camera,weather,selectedLevel);
+      if(state.experience&&state.status!=='done'&&(selectedLevel===null||selectedLevel===state.plan.construction.view.surfaceLevel))TownExperienceUI.markers(scene,TownConstructionConfig.site(state.plan).view.resources,R.viewport(state,false,camera),state.wilderness?.feed?.manual);
       ui+=elapsed;if(ui>.14){update();ui=0;}
       if(clock-lastSave>4||(state.status==='done'&&previousStatus!=='done'))persist();
       if(wasCatching&&!catching){update();persist();}
@@ -176,5 +195,5 @@
   }
   document.addEventListener('visibilitychange',()=>{capture();if(document.hidden){cancelAnimationFrame(frameId);frameId=0;sound.suspend();persist();}else{catching=timer.debt>=1/30;eventSeq=state.experience?.sequence||0;sound.wake();schedule();}});
   window.addEventListener('pagehide',()=>{capture();TownSessionClock.pump(timer,state,E);persist();});
-  state.blueprint=state.plan?.id||plans[selected].id;update();schedule();
+  state.blueprint=state.plan?.id||plans[selected].id;update();resetView();schedule();
 })();

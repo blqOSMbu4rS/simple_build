@@ -190,7 +190,7 @@
     if(s.plan.cutaway){
       const target=CONFIG.target(s.plan,c);
       s.active=MOT.create(c,stock,s.pets,site.gathering?1-site.gathering.worker:hash(c.id)%2,target,timber,MOT.isChinking(s.plan,c),site);
-      note(s,taskLabel(c)+(timber?' · 两人抬木，到墙下再抬升对齐':s.plan.gridBuild?' · 搬一块，建一格':' · 每次搬一块，搬齐后敲打建造'));return;
+      note(s,taskLabel(c)+(CONFIG.action(c)==='excavate'?' · 逐格挖开山体':timber?' · 两人抬木，到墙下再抬升对齐':s.plan.gridBuild?' · 搬一块，建一格':' · 每次搬一块，搬齐后敲打建造'));return;
     }
     const target=(s.plan.modular?MOD.workPoint(s.plan,c):ART.workPoint(s.plan,c.id))||{x:ORIGIN+(c.x+c.w/2)*GRID,y:Math.min(GROUND,GROUND-c.y*GRID)};
     const supply={x:c.material==='W'?84:c.material==='S'?127:165,y:GROUND};
