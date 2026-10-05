@@ -29,6 +29,7 @@
  }
  function partSprite(c,v,a,x,y){
   c.save();c.translate(x,y);if(a.flipX)c.scale(-1,1);
+  if(a.crop){const [col,row,cols,rows]=a.crop;c.beginPath();c.rect(-a.width/2+col*a.width/cols,-a.height+row*a.height/rows,a.width/cols+.03,a.height/rows+.03);c.clip();}
   if(a.skewY)c.transform(1,a.skewY,0,1,0,0);
   sprite(c,v,a.texture,0,a.skewY?Math.abs(a.skewY)*a.width/2:0,a.width,a.height,a.fit);c.restore();
  }
@@ -62,19 +63,20 @@
    c.save();polygon(c,[t0,t1,t2],.25);c.clip();c.transform(ax,ay,bx,by,t0[0]-ax*s0[0]-bx*s0[1],t0[1]-ay*s0[0]-by*s0[1]);c.drawImage(img,0,0);c.restore();
   }c.restore();
  }
- function part(c,plan,p,joints){if(p.view.faces){for(const f of p.view.faces)face(c,plan,f,joints);}else if(p.view.surface)surfaceSprite(c,plan,p.view);else{const [x,y]=point(plan,p);partSprite(c,plan.construction.view,p.view,x,y);}}
+ function part(c,plan,p,joints){const a=p.view;if(a.faces){for(const f of a.faces)face(c,plan,f,joints);}else if(a.fallbackFaces&&!images.has(plan.construction.view.textures[a.texture])){for(const f of a.fallbackFaces)face(c,plan,f,joints);}else if(a.surface)surfaceSprite(c,plan,a);else{const [x,y]=point(plan,p);partSprite(c,plan.construction.view,a,x,y);}}
  function receiverPath(c,plan,parts){
   const faces=parts.filter(p=>p.view.receivesLight).flatMap(p=>p.view.faces||[]);if(!faces.length)return false;
   c.beginPath();for(const f of faces){const q=f.points.map(p=>project(plan,p));c.moveTo(...q[0]);for(const p of q.slice(1))c.lineTo(...p);c.closePath();}return true;
  }
- function illumination(c,plan,parts,time){
-  for(const p of parts){const a=p.view.light;if(!a)continue;c.save();if(!receiverPath(c,plan,parts)){c.restore();continue;}c.clip();
+ function illumination(c,plan,parts,time,lights=parts){
+  for(const p of lights){const a=p.view.light;if(!a)continue;c.save();if(!receiverPath(c,plan,parts)){c.restore();continue;}c.clip();
    const [x,y]=project(plan,a.anchor),radius=a.radius*(1+Math.sin(time*5)*((a.pulse)||0)),gradient=c.createRadialGradient(x,y,0,x,y,radius);
    for(const [at,color]of a.stops)gradient.addColorStop(at,color);c.fillStyle=gradient;c.fillRect(x-radius,y-radius,radius*2,radius*2);c.restore();
   }
  }
- function depth(plan,p){const a=p.view,q=a.anchor||[a.u+.5,a.v+.5];return project(plan,[q[0],q[1],0])[1]+(a.depthOffset||0);}
- const visible=(view,level)=>level===null||level===undefined||view.level===undefined||view.level===level;
+ function depth(plan,p){const a=p.view,q=a.anchor||[a.u+.5,a.v+.5];return a.order??(project(plan,[q[0],q[1],0])[1]+(a.depthOffset||0));}
+ const visible=(view,level)=>level===null||level===undefined?view.singleLevelOnly!==true:!view.overviewOnly&&(view.level===undefined||view.level===level);
+ const bounds=plan=>[0,0,...(plan?.construction?.view?.worldSize||[480,304])];
  function backdrop(c,shapes,time){
   for(const a of shapes||[]){c.save();c.globalAlpha=a.opacity??1;c.translate(Math.sin(time*.2+(a.x||0))*(a.drift||0),0);c.beginPath();
    if(a.ellipse)c.ellipse(...a.ellipse,0,0,Math.PI*2);
@@ -84,18 +86,19 @@
  }
  function draw(canvas,s,clock=0,preview=false,camera=null,weather,level=null){
   const plan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint),v=plan.construction.view;
-  ensure(plan);const c=canvas.getContext('2d'),[vx,vy,vw,vh]=preview||!camera?[0,0,480,304]:camera,time=preview?0:clock;
+  if(!preview)ensure(plan);const c=canvas.getContext('2d'),[vx,vy,vw,vh]=preview||!camera?bounds(plan):camera,time=preview?0:clock,[,,worldW,worldH]=bounds(plan);
   c.save();c.setTransform(canvas.width/vw,0,0,canvas.height/vh,-vx*canvas.width/vw,-vy*canvas.height/vh);c.imageSmoothingEnabled=true;
-  c.fillStyle=v.sky||'#65bfc3';c.fillRect(0,0,480,304);const bg=images.get(v.background);if(bg)c.drawImage(bg,0,0,480,304);
-  backdrop(c,v.backdrop,time);
+  c.fillStyle=v.sky||'#65bfc3';c.fillRect(0,0,worldW,worldH);const bg=images.get(v.background);if(bg)c.drawImage(bg,0,0,worldW,worldH);
+  backdrop(c,(v.backdrop||[]).filter(a=>visible(a,level)),time);
   const completed=new Set((preview?plan.parts:s.installed).map(p=>p.id));
-  for(const a of v.terrain||[])if(visible(a.view,level)&&!completed.has(a.clearBy))part(c,plan,a);
+  const terrain=(v.terrain||[]).filter(a=>visible(a.view,level)&&!completed.has(a.clearBy));
   // Water movement stays over ocean and the pond, never moving land or parts.
   c.strokeStyle='#d1f0d055';c.lineWidth=.6;
   if(v.ripples){for(const [i,a]of v.ripples.entries()){c.beginPath();c.ellipse(a.x,a.y+Math.sin(time*.9+i),a.rx+Math.sin(time+i),a.ry,0,0,Math.PI);c.stroke();}}
   else{for(let i=0;i<12;i++){const x=20+i*39,y=288+Math.sin(time*.9+i)*2;c.beginPath();c.ellipse(x,y,7,1.4,0,0,Math.PI);c.stroke();}
    c.beginPath();c.ellipse(381,90,7+Math.sin(time)*2,2,0,0,Math.PI*2);c.stroke();}
   const layers=[],harvest=!preview&&root.TownWildGather.sample(s.wilderness);
+  for(const a of [...(v.geometry||[]),...terrain])if(visible(a.view,level))layers.push({depth:depth(plan,a),draw:()=>part(c,plan,a)});
   for(const a of v.scenery||[]){
    if(!visible(a,level))continue;
    const tree=s.wilderness?.trees?.find(t=>t.x===a.source),key=tree?.felled?'stump':a.texture;
@@ -113,9 +116,10 @@
   for(const p of parts){const [x,y]=point(plan,p),a=p.view;
    const paint=()=>{c.save();if(a.shadow){c.save();if(a.shadow.clipReceivers&&receiverPath(c,plan,parts))c.clip();c.fillStyle=a.shadow.color||'#31432c';c.globalAlpha=a.shadow.opacity;c.beginPath();
     if(a.shadow.points){const q=a.shadow.points.map(p=>project(plan,p));c.moveTo(...q[0]);for(const p of q.slice(1))c.lineTo(...p);c.closePath();}else c.ellipse(x,y-1,a.shadow.rx,a.shadow.ry,0,0,Math.PI*2);c.fill();c.restore();}part(c,plan,p,joints);c.restore();};
-   if(p.layer<2)paint();else layers.push({depth:depth(plan,p),draw:paint});
+   if(p.layer<2&&p.view.order===undefined)paint();else layers.push({depth:depth(plan,p),draw:paint});
   }
-  illumination(c,plan,parts,time);
+  illumination(c,plan,parts,time,parts.filter(p=>p.view.order===undefined));
+  for(const p of parts.filter(p=>p.view.light&&p.view.order!==undefined))layers.push({depth:depth(plan,p)+.1,draw:()=>illumination(c,plan,parts.filter(a=>a.view.level===p.view.level),time,[p])});
   if(!preview){
    const pose=s.active&&root.TownCutawayMotion.sample(s.active),g=root.TownWildGather.sample(s.wilderness);
    for(const [i,p]of s.pets.entries()){
@@ -125,7 +129,8 @@
     const working=s.active?.workers.includes(i),gathering=i===(s.wilderness?.active?.worker??1)&&g;
     const held=gathering?g.held:working?pose?.held:null,hammer=working&&pose?.hammer,walking=held||gathering||working;
     const [pw,ph]=v.petSize||[14,22],scale=ph/22;
-    layers.push({depth:y+.1,draw:()=>{
+    const actionOrder=working?(s.active.part.view.actionOrder??s.active.part.view.order):undefined;
+    layers.push({depth:actionOrder===undefined?y+.1:actionOrder+.5,draw:()=>{
      c.fillStyle='#38513733';c.beginPath();c.ellipse(x,y,pw*.43,2*scale,0,0,Math.PI*2);c.fill();
      let bob=walking?Math.sin(s.time*8)*.65:0;if(v.petStyle?.pixelSnap)bob=Math.round(bob);
      c.save();c.imageSmoothingEnabled=v.petStyle?.smoothing??true;sprite(c,v,i?'fox':'bunny',x,y+bob,pw,ph);c.restore();
@@ -135,7 +140,7 @@
      }
     }});
    }
-   if(pose?.smoke&&visible(s.active.part.view,level)){const [x,y]=point(plan,s.active.part);layers.push({depth:400,draw:()=>{c.globalAlpha=pose.smoke*.55;c.fillStyle='#eee8c8';for(let i=0;i<5;i++){c.beginPath();c.arc(x-12+i*6,y-7-Math.sin(s.time*4+i)*4,5,0,Math.PI*2);c.fill();}c.globalAlpha=1;}});}
+   if(pose?.smoke&&visible(s.active.part.view,level)){const [x,y]=point(plan,s.active.part),order=s.active.part.view.actionOrder??s.active.part.view.order;layers.push({depth:order===undefined?400:order+.9,draw:()=>{c.globalAlpha=pose.smoke*.55;c.fillStyle='#eee8c8';for(let i=0;i<5;i++){c.beginPath();c.arc(x-12+i*6,y-7-Math.sin(s.time*4+i)*4,5,0,Math.PI*2);c.fill();}c.globalAlpha=1;}});}
    for(const [k,n]of Object.entries(root.TownEngine.inventory(s).free)){if(!n||!visible({level:v.surfaceLevel},level))continue;const [x,y]=pathPoint(plan,root.TownConstructionConfig.site(plan).piles[k]);c.fillStyle=k==='S'?'#8d9690':'#9b7044';for(let i=0;i<Math.min(n,6);i++)c.fillRect(x-8+i%3*6,y-2-Math.floor(i/3)*4,6,4);}
   }
   layers.sort((a,b)=>a.depth-b.depth);for(const a of layers)a.draw();
@@ -144,5 +149,5 @@
   if(level===null||level===undefined||!(v.levels?.find(a=>a.id===level)?.underground))root.TownCutawayWeather?.draw(canvas,s,time,preview,camera,weather);
  }
  function roofMask(c,plan,parts){for(const p of parts)part(c,plan,p);}
- root.TownDiagonalRenderer={ensure,draw,point,project,pathPoint,actorPoint,roofMask,visible,get revision(){return revision;}};
+ root.TownDiagonalRenderer={ensure,draw,point,project,pathPoint,actorPoint,roofMask,visible,bounds,get revision(){return revision;}};
 })(globalThis);

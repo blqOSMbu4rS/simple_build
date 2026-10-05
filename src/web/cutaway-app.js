@@ -18,11 +18,12 @@
   document.addEventListener('click',event=>{if(catching||!settle()){event.preventDefault();event.stopImmediatePropagation();return;}if(!muted&&!document.hidden)sound.unlock();},true);
   document.addEventListener('change',event=>{if(catching||!settle()){event.stopImmediatePropagation();update();}},true);
   // Camera belongs to this view, never to the construction state or saved plan.
-  const scene=$('scene');let camera=null,drag=null;
+  const scene=$('scene');let camera=null,drag=null,lastPaint=null;
   const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
+  function worldSize(){return (state.plan||plans[selected]).construction?.view?.worldSize||[480,304];}
   function setCamera(x,y,w,h){
-    w=clamp(w,80,480);h=clamp(h,304/6,304);
-    camera=[clamp(x,0,480-w),clamp(y,0,304-h),w,h];
+    const [ww,wh]=worldSize();w=clamp(w,ww/6,ww);h=clamp(h,wh/6,wh);
+    camera=[clamp(x,0,ww-w),clamp(y,0,wh-h),w,h];
   }
   function endDrag(){
     if(drag&&scene.hasPointerCapture(drag.id))scene.releasePointerCapture(drag.id);
@@ -43,6 +44,12 @@
     }
     for(const b of nav.children)b.setAttribute('aria-pressed',String((b.dataset.level||null)===selectedLevel));
     const floor=levels.find(a=>a.id===selectedLevel),items=plan.parts.filter(p=>!floor||p.view?.level===floor.id),done=new Set(state.installed.map(p=>p.id));
+    const [ww,wh]=worldSize(),aspect=floor?.camera?floor.camera[2]/floor.camera[3]:ww/wh;
+    const height=Math.round(scene.width/aspect);if(scene.height!==height)scene.height=height;
+    scene.style.imageRendering=plan.construction?.view?.worldSize?'auto':'pixelated';
+    const fit=plan.construction?.view?.fitViewport;
+    scene.style.maxWidth=fit&&!floor?'calc(max(240px, 100dvh - 200px) * '+aspect+')':'';
+    scene.style.marginInline=fit?'auto':'';
     $('floor-status').hidden=!levels.length;
     $('floor-status').textContent=(floor?floor.label+' · '+floor.name:'总览 · 全部楼层')+' · '+items.filter(p=>done.has(p.id)).length+'/'+items.length;
     if(floor&&state.active&&state.active.part.view.level!==floor.id)$('floor-status').textContent+=' · 正在其他楼层施工';
@@ -77,11 +84,11 @@
     const rect=scene.getBoundingClientRect(),[x,y,w,h]=R.viewport(state,false,camera);
     const px=clamp((event.clientX-rect.left)/rect.width,0,1),py=clamp((event.clientY-rect.top)/rect.height,0,1);
     const delta=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?rect.height:1);
-    const factor=clamp(Math.exp(clamp(delta,-1000,1000)*.0015),Math.max(80/w,304/6/h),Math.min(480/w,304/h));
+    const [ww,wh]=worldSize(),factor=clamp(Math.exp(clamp(delta,-1000,1000)*.0015),Math.max(ww/6/w,wh/6/h),Math.min(ww/w,wh/h));
     setCamera(x+px*w*(1-factor),y+py*h*(1-factor),w*factor,h*factor);
   },{passive:false});
   $('reset-view').onclick=resetView;
-  function persist(){if(loadError)return;try{localStorage.setItem(KEY,JSON.stringify({selected:plans[selected].id,state:E.save(state),weather,sceneryClock,atmospherePaused,muted,selectedLevel}));lastSave=clock;}catch(err){$('status').textContent='自动保存不可用';console.warn(err);}}
+  function persist(){if(loadError)return;try{localStorage.setItem(KEY,JSON.stringify({selected:plans[selected].id,state:E.store(state),weather,sceneryClock,atmospherePaused,muted,selectedLevel}));lastSave=clock;}catch(err){$('status').textContent='自动保存不可用';console.warn(err);}}
   function update(){
     const plan=state.plan||plans[selected],inv=E.inventory(state);
     updateLevels(plan);
@@ -138,15 +145,22 @@
   for(const [i,p]of plans.entries()){
     const button=document.createElement('button');button.type='button';button.className='card';button.setAttribute('aria-label','选择'+p.name);
     const canvas=document.createElement('canvas');canvas.width=480;canvas.height=304;
+    if(p.construction?.view?.worldSize){const [w,h]=p.construction.view.worldSize;canvas.height=Math.round(480*h/w);canvas.style.aspectRatio=w+'/'+h;canvas.style.imageRendering='auto';}
     const title=document.createElement('strong');title.textContent=p.name;
     const desc=document.createElement('small');desc.textContent=p.description;
     button.append(canvas,title,desc);$('plans').append(button);
     R.draw(canvas,{...state,plan:p,installed:p.parts},0,true);
     button.onclick=()=>{if(state.status!=='idle')return;selected=i;selectedLevel=null;state.blueprint=p.id;if(!TownConstructionConfig.site(p).experience)state.speed=1;resetView();update();persist();};
   }
-  Promise.all([TownCottageArt.ensure(state.plan||plans[selected]),TownWildernessArt.ensure(state.plan||plans[selected]),...plans.map(p=>TownDiagonalRenderer.ensure(p))]).then(()=>{
+  Promise.all([TownCottageArt.ensure(state.plan||plans[selected]),TownWildernessArt.ensure(state.plan||plans[selected]),TownDiagonalRenderer.ensure(state.plan||plans[selected])]).then(()=>{
     document.querySelectorAll('.card canvas').forEach((canvas,i)=>R.draw(canvas,{...state,plan:plans[i],installed:plans[i].parts},0,true));
   });
+  // Large scene assets load when their card enters view, or when the scene is selected.
+  const cardObserver=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){
+    const index=Number(entry.target.dataset.planIndex),p=plans[index];cardObserver.unobserve(entry.target);
+    TownDiagonalRenderer.ensure(p).then(()=>R.draw(entry.target.querySelector('canvas'),{...state,plan:p,installed:p.parts},0,true));
+  }},{rootMargin:'100px'});
+  document.querySelectorAll('.card').forEach((card,index)=>{card.dataset.planIndex=index;cardObserver.observe(card);});
   for(const button of document.querySelectorAll('[data-material]'))button.onclick=()=>{E.addMaterials(state,button.dataset.material,{W:8,S:6,C:2}[button.dataset.material]);update();persist();};
   document.querySelectorAll('[data-gather]').forEach(b=>b.onclick=()=>{if(state.experience)TownWildGather.manual(state,b.dataset.gather);else TownWildGather.request(state,b.dataset.gather);update();persist();});
   $('cancel-gather').onclick=()=>{TownWildGather.cancel(state);update();persist();};
@@ -186,8 +200,12 @@
       const events=state.experience?.events.filter(e=>e.seq>eventSeq)||[];eventSeq=state.experience?.sequence||0;
       if(!wasCatching&&!catching)for(const e of events){if(!state.paused&&devSpeed===1)sound.play(e.type);if(e.text){$('feedback').textContent=e.text;$('feedback').hidden=false;feedbackUntil=now+4500;}}
       if(now>feedbackUntil)$('feedback').hidden=true;
-      R.draw(scene,state,sceneryClock,false,camera,weather,selectedLevel);
-      if(state.experience&&state.status!=='done'&&(selectedLevel===null||selectedLevel===state.plan.construction.view.surfaceLevel))TownExperienceUI.markers(scene,TownConstructionConfig.site(state.plan).view.resources,R.viewport(state,false,camera),state.wilderness?.feed?.manual);
+      const paintKey=[state.time,sceneryClock,state.installed.length,state.materials.length,state.active?.id,state.active?.elapsed,state.building,selected,selectedLevel,weather,scene.width,scene.height,camera?.join(','),TownCottageArt.revision,TownWildernessArt.revision,TownDiagonalRenderer.revision].join('|');
+      if(!(state.plan||plans[selected]).construction?.view?.renderOnChange||paintKey!==lastPaint){
+        R.draw(scene,state,sceneryClock,false,camera,weather,selectedLevel);lastPaint=paintKey;
+        scene.dataset.viewport=JSON.stringify(R.viewport(state,false,camera));
+        if(state.experience&&state.status!=='done'&&(selectedLevel===null||selectedLevel===state.plan.construction.view.surfaceLevel))TownExperienceUI.markers(scene,TownConstructionConfig.site(state.plan).view.resources,R.viewport(state,false,camera),state.wilderness?.feed?.manual);
+      }
       ui+=elapsed;if(ui>.14){update();ui=0;}
       if(clock-lastSave>4||(state.status==='done'&&previousStatus!=='done'))persist();
       if(wasCatching&&!catching){update();persist();}

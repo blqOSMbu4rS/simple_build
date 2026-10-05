@@ -7,8 +7,10 @@
  const copy=value=>JSON.parse(JSON.stringify(value));
  function site(plan){
   const config=plan?.construction||{};
-  return {...copy(defaults),...copy(config),piles:{...defaults.piles,...config.piles},
-   view:{...copy(defaults.view),...copy(config.view||{})}};
+  // Authored nested data is read-only. Motion.create takes its own serializable snapshot.
+  // Avoid copying hundreds of terrain faces on every fixed simulation step.
+  return {...copy(defaults),...config,piles:{...defaults.piles,...config.piles},
+   view:{...copy(defaults.view),...config.view}};
  }
  const action=part=>part?.buildAction||'install';
  const isTimber=(_plan,part)=>['team-lift','timber-lift'].includes(action(part));
@@ -27,6 +29,10 @@
    !['W','S','B','D'].every(k=>Number.isFinite(g.sources?.[k])&&g.sources[k]>=0&&g.sources[k]<=480)||
    (g.trees!==undefined&&!Array.isArray(g.trees))||![g.water,g.mix,...(g.trees||[])].every(x=>Number.isFinite(x)&&x>=0&&x<=480)))throw Error('采集配置损坏');
   const v=config.view,pair=p=>Array.isArray(p)&&p.length===2&&p.every(Number.isFinite);
+  if(v.worldSize&&(!pair(v.worldSize)||v.worldSize.some(n=>!Number.isInteger(n)||n<80||n>4096)))throw Error('世界尺寸配置损坏');
+  if(v.fitViewport!==undefined&&typeof v.fitViewport!=='boolean')throw Error('视口适配配置损坏');
+  if(v.renderOnChange!==undefined&&typeof v.renderOnChange!=='boolean')throw Error('显示更新配置损坏');
+  if(v.geometry&&(!Array.isArray(v.geometry)||v.geometry.some(a=>!a.view)))throw Error('固定几何配置损坏');
   if(v.levels){
    if(!Array.isArray(v.levels)||!v.levels.length||new Set(v.levels.map(a=>a.id)).size!==v.levels.length||v.levels.some(a=>typeof a.id!=='string'||!a.id||typeof a.label!=='string'||typeof a.name!=='string'||!Number.isFinite(a.elevation)||a.camera&&(!Array.isArray(a.camera)||a.camera.length!==4||!a.camera.every(Number.isFinite)||a.camera[2]<=0||a.camera[3]<=0)))throw Error('楼层配置损坏');
    if(plan.parts.some(p=>!v.levels.some(a=>a.id===p.view?.level)))throw Error('构件楼层缺失');

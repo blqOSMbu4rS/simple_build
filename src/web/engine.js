@@ -292,11 +292,12 @@
       CONFIG.validate(s.plan);const definition=canonical(s.plan);if(!definition||JSON.stringify(definition)!==JSON.stringify(s.plan))throw Error('建筑方案损坏');
     } else if(['building','finishing','done'].includes(s.status))throw Error('缺少建筑方案');
     const definitions=[...(s.plan?s.plan.parts:[]),...s.decorations];
+    const definitionsById=new Map(definitions.map(c=>[c.id,c]));
     const currentIds=new Set();
-    for(const p of s.installed){if(currentIds.has(p.id)||!definitions.some(c=>JSON.stringify(c)===JSON.stringify(p)))throw Error('已安装构件损坏');currentIds.add(p.id);}
+    for(const p of s.installed){if(currentIds.has(p.id)||!definitionsById.has(p.id)||JSON.stringify(definitionsById.get(p.id))!==JSON.stringify(p))throw Error('已安装构件损坏');currentIds.add(p.id);}
     const activeIds=new Set(s.active?s.active.materialIds:[]);
     if(s.active) {
-      if(currentIds.has(s.active.id)||!definitions.some(c=>JSON.stringify(c)===JSON.stringify(s.active.part))||s.active.id!==s.active.part.id||!Number.isFinite(s.active.elapsed)||s.active.elapsed<0||s.active.elapsed>s.active.total+.1)throw Error('施工任务损坏');
+      if(currentIds.has(s.active.id)||!definitionsById.has(s.active.id)||JSON.stringify(definitionsById.get(s.active.id))!==JSON.stringify(s.active.part)||s.active.id!==s.active.part.id||!Number.isFinite(s.active.elapsed)||s.active.elapsed<0||s.active.elapsed>s.active.total+.1)throw Error('施工任务损坏');
       if(!Array.isArray(s.active.workers)||s.active.workers.length!==(MOT?.isTeam(s.active)?2:s.active.motion===MOT?.VERSION?1:s.active.part.workers)||new Set(s.active.workers).size!==s.active.workers.length||s.active.workers.some(i=>i!==0&&i!==1))throw Error('施工人员损坏');
     }
     for(const field of ['nextBatch','decision'])if(!Number.isInteger(s[field])||s[field]<0)throw Error('计数器损坏');
@@ -361,7 +362,23 @@
     return true;
   }
   function save(s) { validate(s);return JSON.stringify(s); }
-  function restore(text) { if(text.length>12000000)throw Error('存档过大');const s=JSON.parse(text);if(s.status==='idle')s.blueprint='modular';else if(s.blueprint===undefined)s.blueprint='blueprint-castle';if(s.speed===.5||s.speed===1.5)s.speed=1;validate(s);return s; }
-  const api={KINDS,MATERIAL_KINDS,LABELS,GRID,GROUND,ORIGIN,CATALOG,BLUEPRINTS,create,preview,shuffle,addMaterials,start,advance,next,inventory,score,feasible,choose,reserve,validate,save,restore,taskLabel,hash,feedback,setMultiplier};
+  function store(s){
+    const data=JSON.parse(save(s)),planRef=p=>p&&!p.modular?{id:p.id}:p;
+    data.plan=planRef(data.plan);data.installed=data.installed.map(p=>p.id);
+    if(data.active)data.active.part=data.active.part.id;
+    for(const h of data.history){h.decorations=h.parts.filter(p=>!p.required);h.plan=planRef(h.plan);h.parts=h.parts.map(p=>p.id);}
+    return JSON.stringify({format:'canonical-v1',state:data});
+  }
+  function expand(data){
+    const resolve=p=>{if(p&&Object.keys(p).length===1){const a=ALL_PLANS.find(a=>a.id===p.id);if(!a)throw Error('图纸版本缺失');return clone(a);}return p;};
+    const parts=(ids,plan,decorations)=>{const map=new Map([...(plan?.parts||[]),...decorations].map(p=>[p.id,p]));return ids.map(id=>{const p=map.get(id);if(!p)throw Error('构件引用损坏');return clone(p);});};
+    const s=data.state;if(!s||!Array.isArray(s.installed)||!Array.isArray(s.history)||!Array.isArray(s.decorations))throw Error('存档结构无效');
+    s.plan=resolve(s.plan);s.installed=parts(s.installed,s.plan,s.decorations);
+    if(s.active)s.active.part=parts([s.active.part],s.plan,s.decorations)[0];
+    for(const h of s.history){h.plan=resolve(h.plan);h.parts=parts(h.parts,h.plan,h.decorations||[]);delete h.decorations;}
+    return s;
+  }
+  function restore(text) { if(text.length>12000000)throw Error('存档过大');const data=JSON.parse(text),s=data.format==='canonical-v1'?expand(data):data;if(s.status==='idle')s.blueprint='modular';else if(s.blueprint===undefined)s.blueprint='blueprint-castle';if(s.speed===.5||s.speed===1.5)s.speed=1;validate(s);return s; }
+  const api={KINDS,MATERIAL_KINDS,LABELS,GRID,GROUND,ORIGIN,CATALOG,BLUEPRINTS,create,preview,shuffle,addMaterials,start,advance,next,inventory,score,feasible,choose,reserve,validate,save,store,restore,taskLabel,hash,feedback,setMultiplier};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.TownEngine=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

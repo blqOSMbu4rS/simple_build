@@ -131,7 +131,8 @@
     if(s.active?.workers.length===2)return;
     if(!g.active){
       let k=g.queue[0];
-      const next=s.plan.parts.find(p=>!s.installed.some(i=>i.id===p.id)&&s.active?.id!==p.id);
+      const installed=new Set(s.installed.map(p=>p.id));
+      const next=s.plan.parts.find(p=>!installed.has(p.id)&&s.active?.id!==p.id);
       if(!k&&g.auto){
         k=next&&demand(s,next.material)>0?next.material:kinds.find(k=>demand(s,k)>0);
       }
