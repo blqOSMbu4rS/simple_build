@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>迷你悬浮山 · 3D 逐层预览</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./style.css">
+  <script defer src="./preview.js"></script>
+</head>
+<body>
+  <header><div class="eyebrow">MINIATURE STUDY / 01</div><h1>一座悬在空中的小山</h1><p>转一转，看看屋檐下。再从上往下，揭开三个小房间。</p></header>
+  <main>
+    <section id="viewport" aria-label="可旋转的悬浮山 3D 模型"><div id="loading" role="status">正在准备小山…</div></section>
+    <aside aria-label="预览控制">
+      <div class="mode-heading"><span>逐层查看</span><strong id="current-layer" aria-live="polite">整体外观</strong></div>
+      <nav id="modes" aria-label="查看模式">
+        <button type="button" data-mode="whole" aria-pressed="true"><span>01</span>整体外观</button>
+        <button type="button" data-mode="ground" aria-pressed="false"><span>02</span>一层</button>
+        <button type="button" data-mode="basement1" aria-pressed="false"><span>03</span>地下一层</button>
+        <button type="button" data-mode="basement2" aria-pressed="false"><span>04</span>地下二层</button>
+        <button type="button" data-mode="rock" aria-pressed="false"><span>05</span>岩石层</button>
+      </nav>
+      <div class="secondary"><button id="reset-view" type="button">↺ 重置视角</button><label><input id="grid-toggle" type="checkbox">网格辅助线</label></div>
+    </aside>
+  </main>
+  <footer><span>拖动旋转 · 滚轮缩放 · 双指缩放</span><span>4 × 4 格 / 每层　·　三层房间</span></footer>
+</body>
+</html>
