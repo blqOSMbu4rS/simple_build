@@ -1,0 +1,163 @@
+{
+  "assets": [
+    {
+      "category": "views",
+      "id": "whole",
+      "label": "整体外观"
+    },
+    {
+      "category": "views",
+      "id": "ground",
+      "label": "一层"
+    },
+    {
+      "category": "views",
+      "id": "basement1",
+      "label": "地下一层"
+    },
+    {
+      "category": "views",
+      "id": "basement2",
+      "label": "地下二层"
+    },
+    {
+      "category": "views",
+      "id": "rock",
+      "label": "岩石层"
+    },
+    {
+      "category": "layers",
+      "id": "ground-room",
+      "label": "一层房间",
+      "rank": 2
+    },
+    {
+      "category": "layers",
+      "id": "ground-room-shell",
+      "label": "一层外围岩壳",
+      "rank": 2
+    },
+    {
+      "category": "layers",
+      "id": "storage-room",
+      "label": "地下一层房间",
+      "rank": 1
+    },
+    {
+      "category": "layers",
+      "id": "storage-room-shell",
+      "label": "地下一层外围岩壳",
+      "rank": 1
+    },
+    {
+      "category": "layers",
+      "id": "workshop-room",
+      "label": "地下二层房间",
+      "rank": 0
+    },
+    {
+      "category": "layers",
+      "id": "workshop-room-shell",
+      "label": "地下二层外围岩壳",
+      "rank": 0
+    },
+    {
+      "category": "layers",
+      "id": "solid-rock-base",
+      "label": "岩石层岩石底座",
+      "rank": -1
+    },
+    {
+      "category": "layers",
+      "id": "roof-assembly",
+      "label": "屋顶",
+      "rank": 3
+    },
+    {
+      "category": "furniture",
+      "id": "bed",
+      "label": "床"
+    },
+    {
+      "category": "furniture",
+      "id": "table",
+      "label": "小桌"
+    },
+    {
+      "category": "furniture",
+      "id": "cabinet",
+      "label": "储物柜"
+    },
+    {
+      "category": "furniture",
+      "id": "shelf",
+      "label": "置物架"
+    },
+    {
+      "category": "furniture",
+      "id": "crate-a",
+      "label": "木箱"
+    },
+    {
+      "category": "furniture",
+      "id": "crate-b",
+      "label": "木箱"
+    },
+    {
+      "category": "furniture",
+      "id": "bench",
+      "label": "工作台"
+    },
+    {
+      "category": "furniture",
+      "id": "tool-cabinet",
+      "label": "工具柜"
+    }
+  ],
+  "height": 1536,
+  "modes": [
+    {
+      "focusY": 2,
+      "frameHeight": 10.8,
+      "id": "whole",
+      "image": "./assets/views/whole.png",
+      "label": "整体外观"
+    },
+    {
+      "focusY": 3.5500000000000003,
+      "frameHeight": 9.2,
+      "id": "ground",
+      "image": "./assets/views/ground.png",
+      "label": "一层"
+    },
+    {
+      "focusY": 2,
+      "frameHeight": 9.2,
+      "id": "basement1",
+      "image": "./assets/views/basement1.png",
+      "label": "地下一层"
+    },
+    {
+      "focusY": 0.45,
+      "frameHeight": 9.2,
+      "id": "basement2",
+      "image": "./assets/views/basement2.png",
+      "label": "地下二层"
+    },
+    {
+      "focusY": -0.65,
+      "frameHeight": 7.5,
+      "id": "rock",
+      "image": "./assets/views/rock.png",
+      "label": "岩石层"
+    }
+  ],
+  "projection": {
+    "azimuth": 45,
+    "elevation": 45,
+    "span": 10.8,
+    "targetY": 2
+  },
+  "version": 1,
+  "width": 1536
+}
