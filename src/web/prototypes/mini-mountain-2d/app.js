@@ -29,10 +29,10 @@ try {
     const ratio = Math.min(devicePixelRatio || 1, 2);
     canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
     context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, width, height);
-    const scale = Math.min(height / mode.frameHeight, width / 8.8) * zoom;
+    // Exported views share the same camera; switching layers only replaces pixels.
+    const scale = Math.min(height / manifest.projection.span, width / 8.8) * zoom;
     const size = manifest.projection.span * scale;
-    const offset = (mode.focusY - manifest.projection.targetY) * Math.cos(manifest.projection.elevation * Math.PI / 180) * scale;
-    context.drawImage(images.get(mode.id), width / 2 - size / 2 + pan.x, height / 2 - size / 2 + offset + pan.y, size, size);
+    context.drawImage(images.get(mode.id), width / 2 - size / 2 + pan.x, height / 2 - size / 2 + pan.y, size, size);
     fallback.hidden = true;
     document.querySelector('#zoom').value = `${Math.round(zoom * 100)}%`;
   }
@@ -51,7 +51,7 @@ try {
     for (const button of document.querySelectorAll('[data-mode]')) button.setAttribute('aria-pressed', String(button.dataset.mode === next.id));
     document.querySelector('#current-layer').textContent = next.label;
     const download = document.querySelector('#download'); download.href = next.image; download.download = `mini-mountain-${next.id}.png`;
-    reset(); loading.hidden = true;
+    render(); loading.hidden = true;
   }
   for (const [i, entry] of manifest.modes.entries()) {
     const button = document.createElement('button'); button.type = 'button'; button.dataset.mode = entry.id;
