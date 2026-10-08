@@ -10,6 +10,9 @@ main { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1
 canvas { display: block; width: 100%; height: 100%; outline: none; }
 #loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 14px; padding: 20px; }
 #loading[hidden] { display: none; }
+#fallback { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+#fallback[hidden] { display: none; }
+#loading { inset: auto 12px 12px; padding: 8px 12px; border-radius: 8px; background: #f9faf5e6; text-align: center; }
 aside { align-self: center; padding: 22px 16px; background: #f9faf5ce; border: 1px solid #d8dfd5; border-radius: 16px; }
 .mode-heading { display: flex; flex-direction: column; gap: 6px; padding: 0 10px 20px; font-size: 11px; color: #8a9188; }
 .mode-heading strong { color: #4d5d53; font-size: 18px; font-weight: 600; }
