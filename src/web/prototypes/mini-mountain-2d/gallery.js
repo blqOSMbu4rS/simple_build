@@ -1,5 +1,5 @@
 try {
-  const response = await fetch('./assets/manifest.json');
+  const response = await fetch('./assets/manifest.json?v=20261009-anime-v2');
   if (!response.ok) throw new Error(`Asset manifest: ${response.status}`);
   const manifest = await response.json();
   const categories = { views: '完整视图', layers: '房间、岩壳与屋顶', furniture: '独立家具' };
@@ -7,7 +7,7 @@ try {
     const heading = document.createElement('h2'); heading.textContent = label;
     const grid = document.createElement('div'); grid.className = 'gallery';
     for (const asset of manifest.assets.filter(entry => entry.category === category)) {
-      const link = document.createElement('a'); link.className = 'asset'; link.href = `./assets/${category}/${asset.id}.png`; link.download = `${asset.id}.png`;
+      const link = document.createElement('a'); link.className = 'asset'; link.href = `./assets/${category}/${asset.id}.png?v=${manifest.version}`; link.download = `${asset.id}.png`;
       const image = new Image(); image.src = link.href; image.alt = asset.label; image.loading = 'lazy';
       const caption = document.createElement('span'); caption.textContent = asset.label;
       link.append(image, caption); grid.append(link);

@@ -3,9 +3,10 @@ const loading = document.querySelector('#loading'), context = canvas.getContext(
 const fallback = document.querySelector('#fallback');
 try {
   if (!context) throw new Error('Canvas 2D unavailable');
-  const response = await fetch('./assets/manifest.json');
+  const response = await fetch('./assets/manifest.json?v=20261009-anime-v2');
   if (!response.ok) throw new Error(`Asset manifest: ${response.status}`);
   const manifest = await response.json(), images = new Map(), pending = new Map();
+  const assetUrl = image => `${image}${image.includes('?') ? '&' : '?'}v=${manifest.version}`;
   let mode = manifest.modes[0], zoom = 1, pan = { x: 0, y: 0 }, width = 1, height = 1, selection = 0;
   function loadImage(entry) {
     if (images.has(entry.id)) return Promise.resolve(images.get(entry.id));
@@ -19,7 +20,7 @@ try {
       };
       const timeout = setTimeout(() => finish(new Error(`Image timed out: ${entry.image}`)), 15000);
       image.onload = () => finish(); image.onerror = () => finish(new Error(`Image failed: ${entry.image}`));
-      image.src = entry.image;
+      image.src = assetUrl(entry.image);
     }).finally(() => pending.delete(entry.id));
     pending.set(entry.id, promise); return promise;
   }
@@ -50,7 +51,7 @@ try {
     mode = next; viewport.dataset.viewMode = next.id;
     for (const button of document.querySelectorAll('[data-mode]')) button.setAttribute('aria-pressed', String(button.dataset.mode === next.id));
     document.querySelector('#current-layer').textContent = next.label;
-    const download = document.querySelector('#download'); download.href = next.image; download.download = `mini-mountain-${next.id}.png`;
+    const download = document.querySelector('#download'); download.href = assetUrl(next.image); download.download = `mini-mountain-${next.id}.png`;
     render(); loading.hidden = true;
   }
   for (const [i, entry] of manifest.modes.entries()) {

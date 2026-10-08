@@ -3,19 +3,19 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>迷你悬浮山 · 2D 逐层预览</title>
-  <link rel="icon" href="data:,"><link rel="stylesheet" href="./style.css?v=20261008">
-  <script type="module" src="./app.js?v=20261008-alignment"></script>
+  <link rel="icon" href="data:,"><link rel="stylesheet" href="./style.css?v=20261009-anime-v2">
+  <script type="module" src="./app.js?v=20261009-anime-v2"></script>
 </head>
 <body>
-  <header><div class="eyebrow">MINIATURE STUDY / 02 · 2D</div><h1>把小山，留在一幅画里</h1><p>同一座山，同样的斜 45°。切层保持位置和大小，逐层揭开三个小房间。</p></header>
+  <header><div class="eyebrow">MINIATURE STUDY / 02 · 2D</div><h1>把小山，留在一幅画里</h1><p>二次元手绘风，同样的斜 45°。切层保持位置和大小，逐层揭开三个小房间。</p></header>
   <main>
-    <section id="viewport" aria-label="悬浮山 2D 预览"><img id="fallback" src="./assets/views/whole.png" alt="迷你悬浮山整体外观" fetchpriority="high"><canvas tabindex="0" aria-label="悬浮山二维画面，拖动平移，滚轮缩放，Home 恢复视图"></canvas><div id="loading" role="status">正在准备查看功能…</div></section>
+    <section id="viewport" aria-label="悬浮山 2D 预览"><img id="fallback" src="./assets/views/whole.png?v=2" alt="迷你悬浮山整体外观" fetchpriority="high"><canvas tabindex="0" aria-label="悬浮山二维画面，拖动平移，滚轮缩放，Home 恢复视图"></canvas><div id="loading" role="status">正在准备查看功能…</div></section>
     <aside aria-label="预览控制">
       <div class="mode-heading"><span>逐层查看</span><strong id="current-layer" aria-live="polite">整体外观</strong></div>
       <nav id="modes" aria-label="查看模式"></nav>
       <div class="secondary"><div class="zoom"><button type="button" id="zoom-out" aria-label="缩小">−</button><output id="zoom">100%</output><button type="button" id="zoom-in" aria-label="放大">＋</button></div><button type="button" id="reset-view">↺ 恢复视图</button><a id="download" download>↓ 下载当前透明 PNG</a><a href="./assets.html">查看全部分层素材 ↗</a></div>
     </aside>
   </main>
-  <footer><span>拖动平移 · 滚轮 / 双指缩放</span><a href="../mini-mountain/index.html">查看对应 3D 版 ↗</a><span>4 × 4 格 / 每层 · 三层房间</span></footer>
+  <footer><span>拖动平移 · 滚轮 / 双指缩放</span><a href="../mini-mountain/index.html">原结构 3D 版 ↗</a><span>4 × 4 格 / 每层 · 三层房间</span></footer>
 </body>
 </html>
