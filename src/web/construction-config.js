@@ -47,6 +47,10 @@
    if(view?.imageRect&&(!Array.isArray(view.imageRect)||view.imageRect.length!==4||!view.imageRect.every(Number.isFinite)||view.imageRect[2]<=0||view.imageRect[3]<=0))throw Error('素材画布配置损坏');
    if(view?.imageClip&&(!Array.isArray(view.imageClip)||view.imageClip.length!==4||!view.imageClip.every(Number.isFinite)||view.imageClip[2]<=0||view.imageClip[3]<=0))throw Error('素材切片配置损坏');
    if(view?.clipPoints&&(!Array.isArray(view.clipPoints)||view.clipPoints.length<3||view.clipPoints.some(p=>!Array.isArray(p)||p.length!==3||!p.every(Number.isFinite))))throw Error('素材构件轮廓损坏');
+   if(view?.clipPadding!==undefined&&(!Number.isFinite(view.clipPadding)||view.clipPadding<0||view.clipPadding>1))throw Error('素材接缝配置损坏');
+   if(view?.imageGroup!==undefined&&(typeof view.imageGroup!=='string'||!view.imageGroup||!view.imageRect||!view.clipPoints||view.imageClip))throw Error('构件组合遮罩损坏');
+   if(view?.coveredBy!==undefined&&(!Array.isArray(view.coveredBy)||!plan.parts.some(p=>JSON.stringify(p.view?.joint)===JSON.stringify(view.coveredBy))))throw Error('覆盖连接点损坏');
+   for(const face of [...(view?.faces||[]),...(view?.fallbackFaces||[])]){if(face.texturePlane&&(!Array.isArray(face.texturePlane)||face.texturePlane.length!==4||face.texturePlane.some(p=>!Array.isArray(p)||p.length!==3||!p.every(Number.isFinite))))throw Error('连续材质坐标损坏');if(face.seamJoints&&(!Array.isArray(face.seamJoints)||face.seamJoints.length!==face.points?.length||face.seamJoints.some(id=>id!==null&&!Array.isArray(id))))throw Error('表面接缝连接点损坏');}
    if(range&&(!pair(range)||range[0]>=range[1]))throw Error('构件高度范围损坏');
    if(solid&&(!pair(solid.zRange)||solid.zRange[0]>=solid.zRange[1]||!Array.isArray(solid.footprint)||solid.footprint.length!==4||!solid.footprint.every(pair)))throw Error('剖切实体配置损坏');
   }

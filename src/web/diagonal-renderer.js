@@ -33,12 +33,12 @@
   if(a.skewY)c.transform(1,a.skewY,0,1,0,0);
   sprite(c,v,a.texture,0,a.skewY?Math.abs(a.skewY)*a.width/2:0,a.width,a.height,a.fit);c.restore();
  }
- function polygon(c,q,padding=0){
-  if(!padding){c.beginPath();c.moveTo(...q[0]);for(const p of q.slice(1))c.lineTo(...p);c.closePath();return;}
+ function polygon(c,q,padding=0,begin=true){
+  if(!padding){if(begin)c.beginPath();c.moveTo(...q[0]);for(const p of q.slice(1))c.lineTo(...p);c.closePath();return;}
   const area=q.reduce((s,p,i)=>s+p[0]*q[(i+1)%q.length][1]-p[1]*q[(i+1)%q.length][0],0),sign=area>=0?1:-1;
   const normals=q.map((p,i)=>{const b=q[(i+1)%q.length],dx=b[0]-p[0],dy=b[1]-p[1],length=Math.hypot(dx,dy);return [sign*dy/length,-sign*dx/length];});
-  const points=q.map((p,i)=>{const a=normals[(i+q.length-1)%q.length],b=normals[i],d=padding/(1+a[0]*b[0]+a[1]*b[1]);return [p[0]+(a[0]+b[0])*d,p[1]+(a[1]+b[1])*d];});
-  c.beginPath();c.moveTo(...points[0]);for(const p of points.slice(1))c.lineTo(...p);c.closePath();
+  const points=q.map((p,i)=>{const prev=(i+q.length-1)%q.length,a=normals[prev],b=normals[i],da=Array.isArray(padding)?padding[prev]:padding,db=Array.isArray(padding)?padding[i]:padding,det=a[0]*b[1]-a[1]*b[0];if(Math.abs(det)<1e-10)return [p[0]+b[0]*db,p[1]+b[1]*db];return [p[0]+(da*b[1]-db*a[1])/det,p[1]+(a[0]*db-b[0]*da)/det];});
+  if(begin)c.beginPath();c.moveTo(...points[0]);for(const p of points.slice(1))c.lineTo(...p);c.closePath();
  }
  // Intersect in world space before projection; preserve the original texture transform.
  function clipSection(points,height){
@@ -53,10 +53,10 @@
  function face(c,plan,f,joints,cut){
   if(f.hiddenBy&&joints?.has(JSON.stringify(f.hiddenBy)))return;
   const clipped=clipSection(f.clipPoints||f.points,cut);if(clipped.length<3)return;
-  const [p0,p1,,p3]=f.points.map(p=>project(plan,p)),[u,w,du,dw]=f.uv||[0,0,1,1],img=images.get(plan.construction.view.textures[f.texture]);
+  const [p0,p1,,p3]=(f.texturePlane||f.points).map(p=>project(plan,p)),[u,w,du,dw]=f.uv||[0,0,1,1],img=images.get(plan.construction.view.textures[f.texture]);
   // The three shared corners define an affine surface. No independent sprite trimming or shear.
   const iw=img?.width||1,ih=img?.height||1,ax=(p1[0]-p0[0])/(du*iw),ay=(p1[1]-p0[1])/(du*iw),bx=(p3[0]-p0[0])/(dw*ih),by=(p3[1]-p0[1])/(dw*ih);
-  c.save();if(f.clipPoints||Number.isFinite(cut)){polygon(c,clipped.map(p=>project(plan,p)),f.clipPadding||0);c.clip();}
+  c.save();if(f.texturePlane||f.clipPoints||Number.isFinite(cut)){const padding=f.seamJoints?.length===clipped.length?f.seamJoints.map(id=>id&&joints?.has(JSON.stringify(id))?1:0):f.clipPadding||0;polygon(c,clipped.map(p=>project(plan,p)),padding);c.clip();}
   c.transform(ax,ay,bx,by,p0[0]-ax*u*iw-bx*w*ih,p0[1]-ay*u*iw-by*w*ih);
   const x=u*iw,y=w*ih,width=du*iw,height=dw*ih,overlap=.006;
   c.fillStyle=img?c.createPattern(img,'repeat'):(f.color||'#bc9863');c.fillRect(x-overlap*iw,y-overlap*ih,width+2*overlap*iw,height+2*overlap*ih);
@@ -84,10 +84,11 @@
  function clipBillboard(c,x,y,z,cut,width,height){
   if(!Number.isFinite(cut))return;const boundary=y+z-cut,top=Math.max(y-height,boundary);c.beginPath();c.rect(x-width,top,width*2,Math.max(0,y-top));c.clip();
  }
- function part(c,plan,p,joints,cut){const a=p.view;c.save();
+ function part(c,plan,p,joints,cut,group){const a=p.view;c.save();
   if(a.imageRect&&images.has(plan.construction.view.textures[a.texture])){
    if(a.imageClip){c.beginPath();c.rect(...a.imageClip);c.clip();}
-   if(a.clipPoints){polygon(c,a.clipPoints.map(q=>project(plan,q)));c.clip();}
+   if(group){c.beginPath();for(const item of group)polygon(c,item.view.clipPoints.map(q=>project(plan,q)),item.view.clipPadding||0,false);c.clip();}
+   else if(a.clipPoints){polygon(c,a.clipPoints.map(q=>project(plan,q)),a.clipPadding||0);c.clip();}
    c.drawImage(images.get(plan.construction.view.textures[a.texture]),...a.imageRect);
   }
   else if(a.faces){for(const f of a.faces)face(c,plan,f,joints,cut);}
@@ -155,9 +156,12 @@
     if(tree?.felled&&tree.remaining>0&&!falling){const b=v.harvestRemnant;if(b)sprite(c,v,b.texture,a.x+b.offset[0],a.y+b.offset[1],...b.size);else{c.fillStyle='#8f643b';c.fillRect(a.x+12,a.y-4,22,5);c.fillStyle='#dfb675';c.beginPath();c.ellipse(a.x+34,a.y-1.5,2.5,3,0,0,Math.PI*2);c.fill();}}
    }});
   }
-  let parts=(preview?plan.parts:s.installed).filter(p=>shown(p.view));const joints=new Set(parts.filter(p=>p.view.joint).map(p=>JSON.stringify(p.view.joint)));
+  const built=preview?plan.parts:s.installed,joints=new Set(built.filter(p=>p.view.joint).map(p=>JSON.stringify(p.view.joint)));
+  let parts=built.filter(p=>shown(p.view)&&(!p.view.coveredBy||!joints.has(JSON.stringify(p.view.coveredBy))));
   if(parts.some(p=>p.view.faces))parts=[...parts.filter(p=>p.layer<2).sort((a,b)=>a.layer-b.layer||depth(plan,a)-depth(plan,b)),...parts.filter(p=>p.layer>=2)];
+  const grouped=new Set();
   for(const p of parts){const [x,y]=point(plan,p),a=p.view;
+   if(a.imageGroup&&images.has(v.textures[a.texture])){const key=JSON.stringify([a.imageGroup,a.texture,a.imageRect,a.level,a.order]);if(grouped.has(key))continue;grouped.add(key);const group=parts.filter(p=>p.view.imageGroup&&JSON.stringify([p.view.imageGroup,p.view.texture,p.view.imageRect,p.view.level,p.view.order])===key);layers.push({depth:depth(plan,p),draw:()=>part(c,plan,p,joints,cut,group)});continue;}
    const paint=()=>{c.save();if(a.shadow){c.save();if(a.shadow.clipReceivers&&receiverPath(c,plan,parts,cut))c.clip();c.fillStyle=a.shadow.color||'#31432c';c.globalAlpha=a.shadow.opacity;c.beginPath();
     if(a.shadow.points){const q=clipSection(a.shadow.points,cut).map(p=>project(plan,p));if(q.length>=3){c.moveTo(...q[0]);for(const p of q.slice(1))c.lineTo(...p);c.closePath();}}else c.ellipse(x,y-1,a.shadow.rx,a.shadow.ry,0,0,Math.PI*2);c.fill();c.restore();}part(c,plan,p,joints,cut);c.restore();};
    if(p.layer<2&&p.view.order===undefined)paint();else layers.push({depth:depth(plan,p),draw:paint});
