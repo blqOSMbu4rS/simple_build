@@ -85,7 +85,12 @@
   if(!Number.isFinite(cut))return;const boundary=y+z-cut,top=Math.max(y-height,boundary);c.beginPath();c.rect(x-width,top,width*2,Math.max(0,y-top));c.clip();
  }
  function part(c,plan,p,joints,cut){const a=p.view;c.save();
-  if(a.faces){for(const f of a.faces)face(c,plan,f,joints,cut);}
+  if(a.imageRect&&images.has(plan.construction.view.textures[a.texture])){
+   if(a.imageClip){c.beginPath();c.rect(...a.imageClip);c.clip();}
+   if(a.clipPoints){polygon(c,a.clipPoints.map(q=>project(plan,q)));c.clip();}
+   c.drawImage(images.get(plan.construction.view.textures[a.texture]),...a.imageRect);
+  }
+  else if(a.faces){for(const f of a.faces)face(c,plan,f,joints,cut);}
   else if(a.fallbackFaces&&!images.has(plan.construction.view.textures[a.texture])){for(const f of a.fallbackFaces)face(c,plan,f,joints,cut);}
   else if(a.surface){const q=clipSection(surfaceCell(a),cut);if(q.length>=3){polygon(c,q.map(p=>project(plan,p)));c.clip();surfaceSprite(c,plan,a);}}
   else{const [x,y]=point(plan,p);if(a.anchor)clipBillboard(c,x,y,a.anchor[2],cut,a.width,a.height);partSprite(c,plan.construction.view,a,x,y);}
@@ -105,10 +110,11 @@
  function depth(plan,p){const a=p.view,q=a.anchor||[a.u+.5,a.v+.5];return a.order??(project(plan,[q[0],q[1],0])[1]+(a.depthOffset||0));}
  function visible(view,level,v){
   if(level==null)return view.singleLevelOnly!==true;
-  if(v?.sectionMode!=='horizontal')return !view.overviewOnly&&(view.level===undefined||view.level===level);
+  if(!['horizontal','stacked'].includes(v?.sectionMode))return !view.overviewOnly&&(view.level===undefined||view.level===level);
   const selected=v.levels.find(a=>a.id===level);if(!selected)return false;
   const owner=v.levels.find(a=>a.id===view.level);
   if(owner&&owner.elevation>selected.elevation)return false;
+  if(v.sectionMode==='stacked')return !view.overviewOnly;
   const cut=selected.cutElevation,range=view.zRange||view.sectionSolid?.zRange;
   return !Number.isFinite(cut)||!range||range[0]<cut;
  }
@@ -123,8 +129,10 @@
  function draw(canvas,s,clock=0,preview=false,camera=null,weather,level=null){
   const plan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint),v=plan.construction.view;
   if(!preview)ensure(plan);const c=canvas.getContext('2d'),[vx,vy,vw,vh]=preview||!camera?bounds(plan):camera,time=preview?0:clock,[,,worldW,worldH]=bounds(plan),cut=sectionHeight(v,level),shown=a=>visible(a,level,v);
-  c.save();c.setTransform(canvas.width/vw,0,0,canvas.height/vh,-vx*canvas.width/vw,-vy*canvas.height/vh);c.imageSmoothingEnabled=true;
-  c.fillStyle=v.sky||'#65bfc3';c.fillRect(0,0,worldW,worldH);const bg=images.get(v.background);if(bg)c.drawImage(bg,0,0,worldW,worldH);
+  c.save();const bg=images.get(v.background);
+  if(v.backgroundFixed){c.setTransform(1,0,0,1,0,0);c.fillStyle=v.sky||'#65bfc3';c.fillRect(0,0,canvas.width,canvas.height);if(bg)c.drawImage(bg,0,0,canvas.width,canvas.height);}
+  c.setTransform(canvas.width/vw,0,0,canvas.height/vh,-vx*canvas.width/vw,-vy*canvas.height/vh);c.imageSmoothingEnabled=true;
+  if(!v.backgroundFixed){c.fillStyle=v.sky||'#65bfc3';c.fillRect(0,0,worldW,worldH);if(bg)c.drawImage(bg,0,0,worldW,worldH);}
   backdrop(c,(v.backdrop||[]).filter(shown),time);
   const completed=new Set((preview?plan.parts:s.installed).map(p=>p.id));
   const terrain=(v.terrain||[]).filter(a=>shown(a.view)&&!completed.has(a.clearBy));

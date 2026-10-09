@@ -39,7 +39,7 @@
       for(const a of [{id:null,label:'总览',name:'完整场景'},...levels]){
         const b=document.createElement('button');b.type='button';b.dataset.level=a.id||'';
         b.textContent=a.label;b.title=a.name;b.setAttribute('aria-label',a.label+' · '+a.name);
-        b.onclick=()=>{selectedLevel=a.id;resetView();update();persist();};nav.append(b);
+        b.onclick=()=>{selectedLevel=a.id;if(!plan.construction?.view?.preserveCameraOnLevelChange)resetView();update();persist();};nav.append(b);
       }
     }
     for(const b of nav.children)b.setAttribute('aria-pressed',String((b.dataset.level||null)===selectedLevel));
@@ -48,7 +48,7 @@
     const height=Math.round(scene.width/aspect);if(scene.height!==height)scene.height=height;
     scene.style.imageRendering=plan.construction?.view?.worldSize?'auto':'pixelated';
     const fit=plan.construction?.view?.fitViewport;
-    scene.style.maxWidth=fit&&(!floor||plan.construction.view.sectionMode==='horizontal')?'calc(max(240px, 100dvh - 200px) * '+aspect+')':'';
+    scene.style.maxWidth=fit&&(!floor||['horizontal','stacked'].includes(plan.construction.view.sectionMode))?'calc(max(240px, 100dvh - 200px) * '+aspect+')':'';
     scene.style.marginInline=fit?'auto':'';
     $('floor-status').hidden=!levels.length;
     $('floor-status').textContent=(floor?floor.label+' · '+floor.name:'总览 · 全部楼层')+' · '+items.filter(p=>done.has(p.id)).length+'/'+items.length;
