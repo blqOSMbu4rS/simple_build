@@ -88,6 +88,7 @@
     setCamera(x+px*w*(1-factor),y+py*h*(1-factor),w*factor,h*factor);
   },{passive:false});
   $('reset-view').onclick=resetView;
+  function ensureView(plan){return Promise.all([TownDiagonalRenderer.ensure(plan),globalThis.TownThreeRenderer?.ensure(plan)]);}
   function persist(){if(loadError)return;try{localStorage.setItem(KEY,JSON.stringify({selected:plans[selected].id,state:E.store(state),weather,sceneryClock,atmospherePaused,muted,selectedLevel}));lastSave=clock;}catch(err){$('status').textContent='自动保存不可用';console.warn(err);}}
   function update(){
     const plan=state.plan||plans[selected],inv=E.inventory(state);
@@ -152,13 +153,13 @@
     R.draw(canvas,{...state,plan:p,installed:p.parts},0,true);
     button.onclick=()=>{if(state.status!=='idle')return;selected=i;selectedLevel=null;state.blueprint=p.id;if(!TownConstructionConfig.site(p).experience)state.speed=1;resetView();update();persist();};
   }
-  Promise.all([TownCottageArt.ensure(state.plan||plans[selected]),TownWildernessArt.ensure(state.plan||plans[selected]),TownDiagonalRenderer.ensure(state.plan||plans[selected])]).then(()=>{
+  Promise.all([TownCottageArt.ensure(state.plan||plans[selected]),TownWildernessArt.ensure(state.plan||plans[selected]),ensureView(state.plan||plans[selected])]).then(()=>{
     document.querySelectorAll('.card canvas').forEach((canvas,i)=>R.draw(canvas,{...state,plan:plans[i],installed:plans[i].parts},0,true));
   });
   // Large scene assets load when their card enters view, or when the scene is selected.
   const cardObserver=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){
     const index=Number(entry.target.dataset.planIndex),p=plans[index];cardObserver.unobserve(entry.target);
-    TownDiagonalRenderer.ensure(p).then(()=>R.draw(entry.target.querySelector('canvas'),{...state,plan:p,installed:p.parts},0,true));
+    ensureView(p).then(()=>R.draw(entry.target.querySelector('canvas'),{...state,plan:p,installed:p.parts},0,true));
   }},{rootMargin:'100px'});
   document.querySelectorAll('.card').forEach((card,index)=>{card.dataset.planIndex=index;cardObserver.observe(card);});
   for(const button of document.querySelectorAll('[data-material]'))button.onclick=()=>{E.addMaterials(state,button.dataset.material,{W:8,S:6,C:2}[button.dataset.material]);update();persist();};
@@ -200,7 +201,7 @@
       const events=state.experience?.events.filter(e=>e.seq>eventSeq)||[];eventSeq=state.experience?.sequence||0;
       if(!wasCatching&&!catching)for(const e of events){if(!state.paused&&devSpeed===1)sound.play(e.type);if(e.text){$('feedback').textContent=e.text;$('feedback').hidden=false;feedbackUntil=now+4500;}}
       if(now>feedbackUntil)$('feedback').hidden=true;
-      const paintKey=[state.time,sceneryClock,state.installed.length,state.materials.length,state.active?.id,state.active?.elapsed,state.building,selected,selectedLevel,weather,scene.width,scene.height,camera?.join(','),TownCottageArt.revision,TownWildernessArt.revision,TownDiagonalRenderer.revision].join('|');
+      const paintKey=[state.time,sceneryClock,state.installed.length,state.materials.length,state.active?.id,state.active?.elapsed,state.building,selected,selectedLevel,weather,scene.width,scene.height,camera?.join(','),TownCottageArt.revision,TownWildernessArt.revision,TownDiagonalRenderer.revision,globalThis.TownThreeRenderer?.revision].join('|');
       if(!(state.plan||plans[selected]).construction?.view?.renderOnChange||paintKey!==lastPaint){
         R.draw(scene,state,sceneryClock,false,camera,weather,selectedLevel);lastPaint=paintKey;
         scene.dataset.viewport=JSON.stringify(R.viewport(state,false,camera));

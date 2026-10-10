@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>撒下一座小镇 · 2D 建造</title>
+  <title>撒下一座小镇 · 建造</title>
   <link rel="stylesheet" href="./cutaway.css?v=20261005-levels">
   <script defer src="./pet-work-art.js?v=20261001-config"></script>
-  <script defer src="./construction-config.js?v=20261010-surfaces"></script>
+  <script defer src="./construction-config.js?v=20261010-three"></script>
   <script defer src="./cutaway-legacy-plans.js"></script>
   <script defer src="./cutaway-plans.js?v=20260930-retreat-v3"></script>
   <script defer src="./wilderness-plans.js?v=20261002-weather"></script>
@@ -24,6 +24,7 @@
   <script defer src="./mini-mountain-plans.js?v=20261009-build"></script>
   <script defer src="./mini-mountain-v2-plans.js?v=20261009-dig-first"></script>
   <script defer src="./mini-mountain-v3-plans.js?v=20261010-surfaces"></script>
+  <script defer src="./mini-mountain-3d-plans.js?v=20261010-anime"></script>
   <script defer src="./wilderness-gather.js?v=20261005-eight"></script>
   <script defer src="./art-layout.js"></script>
   <script defer src="./modules.js"></script>
@@ -38,17 +39,18 @@
   <script defer src="./assets/wilderness/runtime.js?v=20261001-small-scenery"></script>
   <script defer src="./wilderness-art.js?v=20261001-config"></script>
   <script defer src="./cottage-art.js?v=20261001-small-scenery"></script>
-  <script defer src="./diagonal-renderer.js?v=20261010-surfaces"></script>
-  <script defer src="./cutaway-renderer.js?v=20261005-eight"></script>
+  <script defer src="./diagonal-renderer.js?v=20261010-three"></script>
+  <script defer src="./three-scene-loader.js?v=20261010-anime"></script>
+  <script defer src="./cutaway-renderer.js?v=20261010-three"></script>
   <script defer src="./cutaway-lighting.js?v=20260930-camera"></script>
   <script defer src="./cutaway-weather.js?v=20261005-eight"></script>
   <script defer src="./session-clock.js?v=20261003-experience"></script>
   <script defer src="./experience-ui.js?v=20261003-experience"></script>
-  <script defer src="./cutaway-app.js?v=20261009-mini-build"></script>
+  <script defer src="./cutaway-app.js?v=20261010-three"></script>
 </head>
 <body>
   <main>
-    <header><div><small>PIECE BY PIECE · 2D BUILD</small><h1>撒下一座小镇 <span>房子慢慢长出来。</span></h1><p>在森林、溪谷、小岛，或云海中的悬浮山上安家。小伙伴就地取材，一点点搭起小屋；在悬山还能向下挖出洞室，切换楼层看看进展。</p></div></header>
+    <header><div><small>PIECE BY PIECE · COZY BUILD</small><h1>撒下一座小镇 <span>房子慢慢长出来。</span></h1><p>在森林、溪谷、小岛，或云海中的悬浮山上安家。小伙伴就地取材，一点点搭起小屋；在悬山还能向下挖出洞室，切换楼层看看进展。</p></div></header>
     <section class="choices" aria-label="选择房子"><div class="heading"><strong>01 / 选一处要建的房子</strong><span>开工前可以更换</span></div><div id="plans" class="cards"></div></section>
     <section class="site" aria-label="建造场景"><div class="site-title"><span id="title">准备开工</span><span id="progress">0 / 0</span></div><div class="view-controls"><span id="view-hint">放大后左键拖动平移 · 滚轮缩放</span><label>天气 <select id="weather"><option value="clear">晴天</option><option value="rain">雨天</option><option value="snow">雪天</option></select></label><button id="atmosphere-pause" type="button" aria-pressed="false">暂停氛围</button><button id="reset-view" type="button">恢复视角</button></div><div id="floor-controls" class="floor-controls" role="group" aria-label="查看楼层" hidden></div><p id="floor-status" class="floor-status" aria-live="polite" hidden></p><div class="scene-wrap"><div id="feedback" role="status" hidden></div><canvas id="scene" width="960" height="608" aria-label="宠物逐件建造与开挖的场景" aria-describedby="view-hint"></canvas></div><div class="site-foot"><span id="message" aria-live="polite">选择一处空地，看房子慢慢长出来。</span><span id="status">本地自动存档</span></div></section>
     <section class="controls"><div class="heading"><strong id="supply-heading">02 / 撒材料，看它们搭建</strong><span id="supply-hint">缺料时现场会保留，补齐后继续</span></div><div id="gather-controls" class="buttons"><button data-gather="S" hidden>收集石料</button><button data-gather="W" hidden>砍木截料</button><button data-gather="B" hidden>拾枝收草</button><button data-gather="D" hidden>取土和泥</button></div><details class="developer"><summary>开发验证</summary><div id="developer-buttons" class="buttons"><div id="materials" class="buttons"><button data-material="W">＋8 木材 <b id="stock-W">0</b></button><button data-material="S">＋6 石材 <b id="stock-S">0</b></button><button data-material="C">＋2 布料 <b id="stock-C">0</b></button><button data-material="B" hidden>树枝 <b id="stock-B">0</b></button><button data-material="D" hidden>泥土 <b id="stock-D">0</b></button></div><label>模拟快进 <select id="dev-speed"><option value="1">×1</option><option value="10">×10</option><option value="30">×30</option></select></label><button id="auto-gather" hidden>自动采集：开</button><button id="fill">补足这座房子的用料</button></div></details><div class="buttons player-controls"><label>施工 <select id="speed"><option value="1">正常</option><option value="2">双倍</option></select></label><button id="mute" aria-pressed="false">静音</button><button id="cancel-gather" hidden>取消采集</button><button id="play" class="primary">开始建造</button></div><p id="gather-status" class="gather-status" hidden></p><div class="foot"><span id="cost"></span><button id="reset">重新开始</button></div></section>

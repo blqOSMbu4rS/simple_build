@@ -143,7 +143,7 @@
   else{for(let i=0;i<12;i++){const x=20+i*39,y=288+Math.sin(time*.9+i)*2;c.beginPath();c.ellipse(x,y,7,1.4,0,0,Math.PI);c.stroke();}
    c.beginPath();c.ellipse(381,90,7+Math.sin(time)*2,2,0,0,Math.PI*2);c.stroke();}
   const layers=[],harvest=!preview&&root.TownWildGather.sample(s.wilderness);
-  for(const a of [...(v.geometry||[]),...terrain])if(shown(a.view))layers.push({depth:depth(plan,a),draw:()=>part(c,plan,a,null,cut)});
+  for(const a of [...(v.fallbackGeometry||v.geometry||[]),...terrain])if(shown(a.view))layers.push({depth:depth(plan,a),draw:()=>part(c,plan,a,null,cut)});
   for(const a of v.scenery||[]){
    if(!shown(a))continue;
    const tree=s.wilderness?.trees?.find(t=>t.x===a.source),key=tree?.felled?'stump':a.texture;
