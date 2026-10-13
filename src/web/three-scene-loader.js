@@ -6,7 +6,7 @@
  const key=v=>JSON.stringify([v.model,v.surfaces||{},v.background||null]);
  function ensure(plan){
   const v=plan?.construction?.view;if(v?.renderer!=='three'||!base)return Promise.resolve(false);
-  if(!pending)pending=new Promise(resolve=>{const script=document.createElement('script');script.src=new URL('three-scene-runtime.js?v=20261013-startup',base).href;script.onload=()=>resolve(!!root.TownThreeRuntime);script.onerror=()=>resolve(false);document.head.append(script);});
+  if(!pending)pending=new Promise(resolve=>{const script=document.createElement('script');script.src=new URL('three-scene-runtime.js?v=20261013-windows',base).href;script.onload=()=>resolve(!!root.TownThreeRuntime);script.onerror=()=>resolve(false);document.head.append(script);});
   if(!models.has(v.model))models.set(v.model,fetch(new URL(v.model,base),{cache:'no-cache'}).then(r=>{if(!r.ok)throw Error('3D model unavailable');return r.json();}));
   const identity=key(v);
   if(!assets.has(identity)){

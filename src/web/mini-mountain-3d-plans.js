@@ -5,7 +5,7 @@
  const p=JSON.parse(JSON.stringify(source)),v=p.construction.view,h=v.tile[0]/2;
  p.id=p.signature=p.silhouette='mini-mountain-anime-3d-v1';delete p.replaces;
  p.name='迷你悬浮山 · 二次元 3D';p.description='45° 立体小屋 · 水彩线稿 · 三层开挖与逐格施工';
- v.previewImage='assets/mini-mountain/3d/preview-watercolor-v1.webp';
+ v.previewImage='assets/mini-mountain/3d/preview-underground-v1.webp';
  v.renderer='three';v.model='assets/mini-mountain/3d/model.json';v.heightUnit=h;
  v.camera3d={azimuth:45,elevation:45,target:[0,2,0],frameHeight:10.8};
  v.background='assets/mini-mountain/3d/sky-watercolor-v1.webp';
@@ -14,8 +14,17 @@
  v.geometry=[{view:{level:v.levels[3].id,meshKey:'base'}},...v.levels.slice(0,3).map((l,i)=>({view:{level:l.id,meshKey:'shell-'+(2-i)}}))];
  // Preserve a lightweight Canvas display when WebGL is unavailable.
  v.fallbackGeometry=source.construction.view.geometry;
+ // Unexcavated cells use the same continuous world-coordinate stone surface as the shell.
+ for(const a of v.terrain)for(const f of a.view.faces||[]){f.surface='stone';f.color='#b7b1ad';}
  const placements={bed:[-2,-2,1,2],table:[0,0,1,1],cabinet:[0,-2,2,1],shelf:[-2,-2,2,1],'crate-a':[-2,0,1,1],'crate-b':[0,-1,1,1],bench:[-2,-2,2,1],'tool-cabinet':[1,-2,1,1]};
  for(const a of p.parts){
+  if(a.kind==='wall'){
+   const level=v.levels.find(l=>l.id===a.view.level),rank=Math.round(level.elevation/(1.55*h));
+   const side=a.x===-3?'west':a.x===2?'east':a.y===-3?'north':'south',segment=(side==='north'||side==='south'?a.x:a.y)+2;
+   const band=Math.round((a.view.z-level.elevation-.12*h)/h);
+   // Both wall and shell holes are authored from the original model's opening configuration.
+   a.view.meshKey='wall-'+rank+'-'+side+'-'+segment+'-'+band;
+  }
   if(a.kind==='furniture'){
    const [u,w,width,depth]=placements[a.view.texture];
    a.view.meshKey='item-'+a.view.texture;
@@ -25,6 +34,7 @@
   if(a.kind==='gable'&&!a.view.faces.length)a.view.faces=a.view.fallbackFaces;
   for(const f of new Set([...(a.view.faces||[]),...(a.view.fallbackFaces||[])])){
    f.surface=f.color==='#e9b972'?'floor':f.color==='#e7dac0'?'plaster':f.color==='#aea4ad'?'stone':['#94633e','#ad794d'].includes(f.color)?'wood':f.color==='#acc8b6'?'roof':null;
+   if(a.kind==='wall'&&v.levels.find(l=>l.id===a.view.level).underground&&f.surface==='stone')f.surface='wood';
    f.color=({'#e9b972':'#d4bda0','#94633e':'#796857','#aea4ad':'#b7b1ad','#ad794d':'#ad9278','#e7dac0':'#f2e9d9','#acc8b6':'#93a4a9'})[f.color]||f.color;
   }
  }
