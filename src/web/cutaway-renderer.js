@@ -474,6 +474,10 @@
   }
   function draw(canvas,s,clock=0,preview=false,camera=null,weather,level=null){
     const plan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint);
+    if(preview&&level==null&&plan?.construction?.view?.previewImage){
+      if(!root.TownDiagonalRenderer.drawPreview(canvas,plan))root.TownDiagonalRenderer.draw(canvas,s,clock,true,camera,weather,level);
+      return;
+    }
     if(plan?.construction?.view?.renderer==='three'&&root.TownThreeRenderer?.draw(canvas,s,clock,preview,camera,weather,level))return;
     if((s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint))?.construction?.view?.projection==='diagonal'){
       root.TownDiagonalRenderer.draw(canvas,s,clock,preview,camera,weather,level);return;

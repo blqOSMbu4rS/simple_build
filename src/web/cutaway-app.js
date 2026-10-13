@@ -88,7 +88,11 @@
     setCamera(x+px*w*(1-factor),y+py*h*(1-factor),w*factor,h*factor);
   },{passive:false});
   $('reset-view').onclick=resetView;
-  function ensureView(plan){return Promise.all([TownDiagonalRenderer.ensure(plan),globalThis.TownThreeRenderer?.ensure(plan)]);}
+  function ensureView(plan,preview=false){
+    if(preview&&plan.construction?.view?.previewImage)return TownDiagonalRenderer.ensurePreview(plan);
+    if(plan.construction?.view?.renderer==='three'&&globalThis.TownThreeRenderer)return TownThreeRenderer.ensure(plan).then(ready=>ready||TownDiagonalRenderer.ensure(plan));
+    return TownDiagonalRenderer.ensure(plan);
+  }
   function persist(){if(loadError)return;try{localStorage.setItem(KEY,JSON.stringify({selected:plans[selected].id,state:E.store(state),weather,sceneryClock,atmospherePaused,muted,selectedLevel}));lastSave=clock;}catch(err){$('status').textContent='自动保存不可用';console.warn(err);}}
   function update(){
     const plan=state.plan||plans[selected],inv=E.inventory(state);
@@ -159,7 +163,7 @@
   // Large scene assets load when their card enters view, or when the scene is selected.
   const cardObserver=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){
     const index=Number(entry.target.dataset.planIndex),p=plans[index];cardObserver.unobserve(entry.target);
-    ensureView(p).then(()=>R.draw(entry.target.querySelector('canvas'),{...state,plan:p,installed:p.parts},0,true));
+    ensureView(p,true).then(()=>R.draw(entry.target.querySelector('canvas'),{...state,plan:p,installed:p.parts},0,true));
   }},{rootMargin:'100px'});
   document.querySelectorAll('.card').forEach((card,index)=>{card.dataset.planIndex=index;cardObserver.observe(card);});
   for(const button of document.querySelectorAll('[data-material]'))button.onclick=()=>{E.addMaterials(state,button.dataset.material,{W:8,S:6,C:2}[button.dataset.material]);update();persist();};

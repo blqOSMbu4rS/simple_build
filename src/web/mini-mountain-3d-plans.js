@@ -5,6 +5,7 @@
  const p=JSON.parse(JSON.stringify(source)),v=p.construction.view,h=v.tile[0]/2;
  p.id=p.signature=p.silhouette='mini-mountain-anime-3d-v1';delete p.replaces;
  p.name='迷你悬浮山 · 二次元 3D';p.description='45° 立体小屋 · 水彩线稿 · 三层开挖与逐格施工';
+ v.previewImage='assets/mini-mountain/3d/preview-watercolor-v1.webp';
  v.renderer='three';v.model='assets/mini-mountain/3d/model.json';v.heightUnit=h;
  v.camera3d={azimuth:45,elevation:45,target:[0,2,0],frameHeight:10.8};
  v.background='assets/mini-mountain/3d/sky-watercolor-v1.webp';

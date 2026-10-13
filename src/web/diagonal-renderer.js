@@ -3,12 +3,21 @@
  'use strict';
  const images=new Map(),pending=new Map(),loads=new WeakMap();let revision=0;
  const base=typeof document==='undefined'?null:new URL('.',document.currentScript.src);
+ function loadImage(url){
+  if(!pending.has(url))pending.set(url,new Promise(resolve=>{const img=new Image();img.onload=()=>{images.set(url,img);revision++;resolve(true);};img.onerror=()=>resolve(false);img.src=base?new URL(url,base).href:url;}));
+  return pending.get(url);
+ }
+ function ensurePreview(plan){const url=plan?.construction?.view?.previewImage;return url?loadImage(url):ensure(plan);}
+ function drawPreview(canvas,plan){
+  const image=images.get(plan.construction.view.previewImage);if(!image)return false;
+  const c=canvas.getContext('2d');c.clearRect(0,0,canvas.width,canvas.height);c.drawImage(image,0,0,canvas.width,canvas.height);
+  if(canvas.dataset)canvas.dataset.lighting='canvas2d-preview';return true;
+ }
  function ensure(plan){
   const v=plan?.construction?.view;if(v?.projection!=='diagonal')return Promise.resolve();
   if(loads.has(v))return loads.get(v);
   const promise=Promise.all([v.background,...Object.values(v.textures||{})].filter(Boolean).map(url=>{
-   if(!pending.has(url))pending.set(url,new Promise(resolve=>{const img=new Image();img.onload=()=>{images.set(url,img);revision++;resolve();};img.onerror=()=>resolve();img.src=base?new URL(url,base).href:url;}));
-   return pending.get(url);
+   return loadImage(url);
   }));loads.set(v,promise);return promise;
  }
  function project(plan,[u,w,z=0]){const v=plan.construction.view,[a,b]=v.basis||[[v.tile[0]/2,v.tile[1]/2],[-v.tile[0]/2,v.tile[1]/2]];return [v.origin[0]+u*a[0]+w*b[0],v.origin[1]+u*a[1]+w*b[1]-z];}
@@ -129,7 +138,7 @@
  }
  function draw(canvas,s,clock=0,preview=false,camera=null,weather,level=null){
   const plan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint),v=plan.construction.view;
-  if(!preview)ensure(plan);const c=canvas.getContext('2d'),[vx,vy,vw,vh]=preview||!camera?bounds(plan):camera,time=preview?0:clock,[,,worldW,worldH]=bounds(plan),cut=sectionHeight(v,level),shown=a=>visible(a,level,v);
+  if(!preview&&!root.TownThreeRenderer?.loading(plan))ensure(plan);const c=canvas.getContext('2d'),[vx,vy,vw,vh]=preview||!camera?bounds(plan):camera,time=preview?0:clock,[,,worldW,worldH]=bounds(plan),cut=sectionHeight(v,level),shown=a=>visible(a,level,v);
   c.save();const bg=images.get(v.background);
   if(v.backgroundFixed){c.setTransform(1,0,0,1,0,0);c.fillStyle=v.sky||'#65bfc3';c.fillRect(0,0,canvas.width,canvas.height);if(bg)c.drawImage(bg,0,0,canvas.width,canvas.height);}
   c.setTransform(canvas.width/vw,0,0,canvas.height/vh,-vx*canvas.width/vw,-vy*canvas.height/vh);c.imageSmoothingEnabled=true;
@@ -200,5 +209,5 @@
   if(level===null||level===undefined||!(v.levels?.find(a=>a.id===level)?.underground))root.TownCutawayWeather?.draw(canvas,s,time,preview,camera,weather);
  }
  function roofMask(c,plan,parts){for(const p of parts)part(c,plan,p);}
- root.TownDiagonalRenderer={ensure,draw,point,project,pathPoint,actorPoint,roofMask,visible,bounds,clipSection,sectionHeight,surfaceCell,clipBillboard,get revision(){return revision;}};
+ root.TownDiagonalRenderer={ensure,ensurePreview,drawPreview,draw,point,project,pathPoint,actorPoint,roofMask,visible,bounds,clipSection,sectionHeight,surfaceCell,clipBillboard,get revision(){return revision;}};
 })(globalThis);
