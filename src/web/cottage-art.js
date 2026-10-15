@@ -8,22 +8,21 @@
     bench:[16,557,501,282],cabinet:[553,473,367,366],plant:[966,478,273,366],
     window:[36,850,458,385],curtains:[525,849,398,397],'wall-shelf':[938,867,304,373]};
   let atlas,roofImage,wallImage,sectionRoof,frontAtlas,forest;
-  const frontRegions={shelf:[59,14,393,493],table:[476,143,449,356],chair:[950,127,332,376],
-    bench:[46,606,557,239],cabinet:[620,515,292,333],plant:[954,507,337,341],
-    curtains:[66,859,518,337],'wall-shelf':[706,851,541,347]};
-  const api={draw,environment,lampAnchor,ensure,revision:0};
-  // Flame coordinates are authored in the independent furniture atlas. Keep
-  // presentation anchors separate from the immutable construction/save plan.
+  const frontRegions={shelf:[0,0,48,64],table:[96,0,48,32],chair:[192,0,32,32],
+    bench:[0,96,32,32],cabinet:[96,96,32,48],plant:[192,96,16,48],
+    curtains:[0,192,64,48],'wall-shelf':[96,192,48,32],ivy:[192,192,16,32]};
+  const pixelStyle={density:1,relief:0,halo:0,ambient:1,lightSteps:4};
+  const api={draw,environment,lampAnchor,ensure,presentation:plan=>plan?.artStyle==='woodland-v3'?pixelStyle:null,revision:0};
+  // Local logical pixels in the independent packed props; never save geometry.
+  const flames={table:[37,4,4,3],shelf:[23,32,5,5],cabinet:[22,25,4,4],'wall-shelf':[26,23,4,4]};
   function lampAnchor(plan,source){
     if(plan.artStyle!=='woodland-v3')return null;
-    const spec={lamp:['desk','table',821,195],'reading-lamp':['books','shelf',236,283],
-      'cabinet-lamp':['cabinet','cabinet',797,590],'wall-shelf':['wall-shelf','wall-shelf',1018,1137]}[source.id];
+    const kind=source.kind==='wall-shelf'?'wall-shelf':null;
+    const spec=kind?[source.id,kind]:{lamp:['desk','table'],'reading-lamp':['books','shelf'],'cabinet-lamp':['cabinet','cabinet']}[source.id];
     if(!spec)return null;
     const part=plan.parts.map(p=>p.tileSource||p).find(p=>p.id===spec[0]);if(!part)return null;
-    const r=frontRegions[spec[1]],w=part.w*16,h=part.h*16,scale=Math.min((w-1)/r[2],(h-1)/r[3]);
-    const dw=Math.round(r[2]*scale*2)/2,dh=Math.round(r[3]*scale*2)/2;
-    return {x:240+part.x*16+(w-dw)/2+(spec[2]-r[0])*dw/r[2],
-      y:272-(part.y+part.h)*16+h-dh+(spec[3]-r[1])*dh/r[3],glass:spec[1]==='table'?[5,2.5]:[3,4]};
+    const [fx,fy,fw,fh]=flames[spec[1]];
+    return {x:240+part.x*16+fx,y:272-(part.y+part.h)*16+fy,glass:[fw,fh],emitter:!!kind};
   }
   function loadImage(source,accept){return typeof Image==='undefined'?Promise.resolve(false):new Promise(resolve=>{
     if(!source){resolve(false);return;}
@@ -82,73 +81,87 @@
     c.drawImage(roofImage,11+sw-edge,93,edge,sh,wing+center,h-dh,wing,dh);
     return roofCache;
   }
-  function environment(c){
+  function environment(c,time=0){
     if(!forest)return false;
-    c.imageSmoothingEnabled=false;
-    // The source ground edge is at row 779. Align it with the simulation floor.
-    c.drawImage(forest,0,0,forest.width,779,0,0,480,272);
-    c.drawImage(forest,0,779,forest.width,forest.height-779,0,272,480,32);
+    c.imageSmoothingEnabled=false;c.drawImage(forest,0,0,480,304);
+    // Sparse stationary reflection clusters vary in length; the backdrop stays fixed.
+    for(let i=0;i<13;i++){
+      const x=18+i*37%450,y=284+i*7%19;
+      const width=2+Math.round((1+Math.sin(time*1.3+i))*2);
+      c.fillStyle=i%4?'#244b61':'#b48b6c';c.fillRect(x,y,width,1);
+    }
     return true;
   }
   function retreat(c,p,w,h){
-    const b=(x,y,w,h,color)=>{c.fillStyle=color;c.fillRect(x,y,w,h);};
+    const b=(x,y,w,h,color)=>{c.fillStyle=color;c.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));};
     if(p.kind==='foundation'){
-      b(0,0,w,2,'#8a7250');b(0,2,w,1,'#403c2d');b(0,3,w,h-3,'#1d302e');
-      for(let x=0;x<w;x+=9){const y=4+(x%3);b(x+.5,y,8,5,'#4b5b50');b(x+1,y,6,.5,'#84917a');b(x+2,y+1,2,.5,'#697766');
-        b(x+1,y+5,7,2,'#293d36');b(x+2,y+7,5,1,'#354e3b');}
+      b(0,0,w,2,'#8d7150');b(0,2,w,h-2,'#233744');
+      for(let row=0;row<2;row++)for(let x=-row*8;x<w;x+=16){
+        b(x+1,3+row*7,14,6,(x+row)%3?'#3c5360':'#465c68');
+        b(x+2,3+row*7,12,1,'#62747a');
+      }
       return true;
     }
     if(p.kind==='wall'){
-      b(0,0,w,h,'#354b49');
-      // Frontal wallpaper and shallow paneling; narrow stone section edges.
-      for(let x=6;x<w-6;x+=4){b(x,0,.5,h-22,'#3c5350');
-        for(let y=5;y<h-22;y+=8){b(x+1,y,.5,1,'#5d6e5c');b(x,y+1,1,.5,'#4b6055');}}
-      b(5,h-23,w-10,22,'#493c30');b(5,h-23,w-10,1,'#96774f');
-      for(let x=6;x<w-5;x+=11){b(x,h-21,.5,19,'#9a7850');b(x+1,h-20,8,17,'#514335');b(x+2,h-18,.5,12,'#69533b');}
+      b(0,0,w,h,'#354d4e');b(5,h-23,w-10,22,'#4c4236');
+      b(5,h-23,w-10,2,'#8a7251');b(5,h-2,w-10,2,'#332f29');
+      for(let x=6;x<w-5;x+=12){b(x,h-20,1,17,'#6b5942');b(x+2,h-19,8,15,'#514536');}
       for(const x of [0,w-5]){
-        b(x,0,5,h,'#303d39');
-        for(let y=0;y<h;y+=7){b(x+.5,y,4,6,'#647064');b(x+1,y,3,.5,'#a3a085');b(x+1+(y%2),y+2,1,2,'#7e8773');b(x,y+6,5,1,'#263531');}
-        b(x+(x?0:4.5),0,.5,h,'#b19769');
+        b(x,0,5,h,'#293c43');
+        for(let y=0;y<h;y+=8){b(x+1,y,4,7,y%3?'#728089':'#657681');b(x+1,y,3,1,'#99a2a0');}
       }
       return true;
     }
     if(p.kind==='roof'){
-      // A shallow bowed contour, with staggered slate edges and moss clusters.
-      for(let x=0;x<w;x+=.5){
-        const t=x/w,curve=Math.round(6*Math.pow(Math.abs(t-.5)*2,2)*2)/2;
-        const top=11+curve+(Math.floor(x/7)%3)*.5;
-        b(x,top,.5,10,'#273c3c');b(x,top+2,.5,3,'#526461');
-        b(x,top+5,.5,5,'#334c4a');b(x,top+10,.5,3,'#332e27');
-        b(x,top+12,.5,.5,'#877852');
+      // Every mark is a logical pixel. The broad slate courses share one contour.
+      for(let x=0;x<w;x++){
+        const curve=Math.round(9*Math.pow(Math.abs(x/w-.5)*2,2)),top=7+curve;
+        b(x,top,1,h-3-top,'#273d4c');b(x,top+1,1,2,'#526573');
+        b(x,top+4,1,h-8-top,'#394e5d');
       }
-      for(let x=1;x<w-5;x+=5){const curve=Math.round(6*Math.pow(Math.abs(x/w-.5)*2,2)*2)/2;
-        const y=11+curve;b(x,y,4,.5,'#8a9380');b(x+1,y+3,4,.5,'#718378');
-        b(x+3,y+5,.5,4,'#203836');b(x,y+9,3,.5,'#60796a');
-        if(x%4===1){b(x,y-1.5,3,2,'#587448');b(x+1,y-2,1,.5,'#839159');}
+      for(let x=2;x<w-4;x+=13){
+        const top=7+Math.round(9*Math.pow(Math.abs(x/w-.5)*2,2));
+        b(x,top+3,11,1,'#60717b');b(x+10,top+4,1,8,'#233643');
+        b(x-3,top+12,12,1,'#293c4a');b(x+4,top+13,1,7,'#243642');
+        if(x%4===2){b(x+2,top-1,3,2,'#566b43');b(x+3,top-2,1,2,'#7c8b51');}
       }
-      for(const x of [14,45,w-34]){b(x,9,1,6,'#4d6541');b(x-2,10,3,1,'#739055');b(x+1,8,3,1,'#657f4a');}
+      b(0,h-4,w,3,'#755438');b(0,h-4,w,1,'#a17b4d');b(2,h-1,w-4,1,'#322f29');
       return true;
     }
     if(p.kind==='window'){
-      b(1,1,w-2,h-2,'#292e28');b(3,3,w-6,h-6,'#28464e');
-      for(let x=4;x<w-4;x+=9){b(x,6,1,h-13,'#3b6265');b(x-2,14,5,1,'#4a7576');}
-      b(3,h-9,w-6,4,'#405d5b');b(2,2,w-4,1,'#9d7c51');
-      b(w/2-1,3,2,h-5,'#8a6948');b(3,h/2,w-6,1,'#7f684b');
-      b(0,h-3,w,3,'#795c40');b(0,h-3,w,.5,'#bc9863');return true;
+      b(1,1,w-2,h-2,'#2a302b');b(3,3,w-6,h-6,'#315b7d');
+      for(let row=0;row<5;row++){
+        const yy=8+row*7;
+        for(const x of [5,24,43])b(x-row,yy,5+row*3,h-yy-5,row%2?'#19415e':'#214b6b');
+      }
+      for(const x of [8,39])for(let yy=25;yy<h-7;yy+=4)b(x-(yy-24)/4,yy,3+(yy-24)/2,3,'#113646');
+      b(3,h-9,w-6,1,'#557587');b(12,h-7,3,1,'#bc8a62');b(42,h-6,4,1,'#bd9068');
+      b(1,1,w-2,2,'#93744d');b(w/2-1,2,2,h-4,'#795936');
+      b(2,h/2,w-4,2,'#795936');b(0,h-3,w,3,'#886340');return true;
+    }
+    if(p.kind==='rug'){
+      b(0,h-3,w,3,'#824b40');b(2,h-3,w-4,1,'#bb8e64');
+      for(let x=4;x<w-3;x+=7)b(x,h-2,3,2,x%2?'#4f6260':'#b27850');return true;
     }
     if(p.kind==='lamp'&&p.invisible)return true;
     const r=frontRegions[p.kind];
     if(frontAtlas&&r){
-      const scale=Math.min((w-1)/r[2],(h-1)/r[3]),dw=Math.round(r[2]*scale*2)/2,dh=Math.round(r[3]*scale*2)/2;
       c.imageSmoothingEnabled=false;
-      c.drawImage(frontAtlas,...r,(w-dw)/2,h-dh,dw,dh);return true;
+      if(p.kind==='chair')c.drawImage(frontAtlas,...r,10,10,22,22);
+      else c.drawImage(frontAtlas,...r,0,0,w,h);
+      // Unlit glass is dark in the furniture pass. Installed emitter tasks repaint it.
+      const flame=flames[p.kind];if(flame){const [x,y,fw,fh]=flame;b(x-fw/2,y-fh/2,fw,fh,'#806a3c');}
+      return true;
     }
     return false;
   }
   function draw(c,p,x,y,w,h){
     if(p.appearance!=='retreat-v3')loadLegacy();
     c.save();c.translate(x,y);
-    if(p.appearance==='retreat-v3'&&retreat(c,p,w,h)){c.restore();return;}
+    if(p.appearance==='retreat-v3'){
+      c.beginPath();c.rect(0,0,w,h);c.clip();
+      if(retreat(c,p,w,h)){c.restore();return;}
+    }
     if(p.kind==='roof'&&p.appearance==='section-v2'&&sectionRoof){
       c.imageSmoothingEnabled=false;
       c.drawImage(sectionTexture('roof',sectionRoof,[17,95,2144,557],w,h,true),0,0,w,h);

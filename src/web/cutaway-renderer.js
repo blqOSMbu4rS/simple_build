@@ -100,20 +100,22 @@
   // Only flexible sprite regions move. The pot and curtain rail stay anchored;
   // the caller's construction-cell clip also applies to the displaced pixels.
   const movingSprites=new WeakMap();
-  function movingCottagePart(c,p,x,y,w,h,time){
+  function presentation(plan){return {...root.TownCottageArt?.presentation?.(plan),...plan?.construction?.view?.pixelArt};}
+  function movingCottagePart(c,p,x,y,w,h,time,plan){
+    const density=presentation(plan).density||2;
     let cached=movingSprites.get(p),revision=root.TownCottageArt.revision;
-    if(!cached||cached.revision!==revision){
-      const canvas=document.createElement('canvas');canvas.width=w*2;canvas.height=h*2;
-      const context=canvas.getContext('2d');context.scale(2,2);
+    if(!cached||cached.revision!==revision||cached.density!==density){
+      const canvas=document.createElement('canvas');canvas.width=w*density;canvas.height=h*density;
+      const context=canvas.getContext('2d');context.scale(density,density);
       root.TownCottageArt.draw(context,p,0,0,w,h);
-      cached={canvas,revision};movingSprites.set(p,cached);
+      cached={canvas,revision,density};movingSprites.set(p,cached);
     }
     c.save();c.beginPath();c.rect(x,y,w,h);c.clip();c.imageSmoothingEnabled=false;
     for(let row=0;row<h;row+=2){
       const flexible=p.kind==='curtains'?Math.max(0,(row-3)/(h-3)):p.kind==='ivy'?row/h:Math.max(0,(h-10-row)/(h-10));
-      const dx=Math.round(Math.sin(time*1.6+p.x*.7+row*.045)*flexible*2)/2;
+      const dx=Math.round(Math.sin(time*1.6+p.x*.7+row*.045)*flexible*density)/density;
       const band=Math.min(2,h-row);
-      c.drawImage(cached.canvas,0,row*2,w*2,band*2,x+dx,y+row,w,band);
+      c.drawImage(cached.canvas,0,row*density,w*density,band*density,x+dx,y+row,w,band);
     }
     c.restore();
   }
@@ -130,7 +132,7 @@
     const [x,y,w,h]=houseRect(p,plan),pal=palettes[plan.layout];
     if(plan.wilderness&&root.TownWildernessArt){root.TownWildernessArt.draw(c,p,x,y,w,h,time,plan);return;}
     if(plan.artStyle?.startsWith('woodland-')&&root.TownCottageArt){
-      if(time&&typeof document!=='undefined'&&['plant','curtains','ivy'].includes(p.kind))movingCottagePart(c,p,x,y,w,h,time);
+      if(time&&typeof document!=='undefined'&&['plant','curtains','ivy'].includes(p.kind))movingCottagePart(c,p,x,y,w,h,time,plan);
       else root.TownCottageArt.draw(c,p,x,y,w,h);
       return;
     }
@@ -378,7 +380,7 @@
     const time=preview?0:Math.floor(clock*12)/12;
     const wilderness=environmentPlan?.wilderness;
     if(wilderness&&root.TownWildernessArt)root.TownWildernessArt.environment(c,s,time);
-    else {if(!retreat||!root.TownCottageArt?.environment(c))ground(c,time);scenery(c,time,retreat);}
+    else {if(!retreat||!root.TownCottageArt?.environment(c,time))ground(c,time);if(!retreat)scenery(c,time,false);}
     if(!preview){c.save();c.translate(0,worksite(s).view.stockOffsetY||0);stock(c,s);c.restore();}
     c.save();siteTransform(c,s);
     root.TownPetWorkArt.trees(c,s,time,x=>travelX(s,x),preview);
@@ -472,6 +474,7 @@
     windowGlass(c,s,preview,true,clock);
     c.restore();
   }
+  let fallbackPixels;
   function draw(canvas,s,clock=0,preview=false,camera=null,weather,level=null){
     const plan=s.plan||root.TownBlueprints.find(p=>p.id===s.blueprint);
     if(preview&&level==null&&plan?.construction?.view?.previewImage){
@@ -484,9 +487,14 @@
     }
     if(!root.TownCutawayLighting?.render(canvas,s,clock,preview,camera)){
       if(canvas.dataset)canvas.dataset.lighting='canvas2d';
-      drawBase(canvas,s,clock,preview,false,camera);
+      if(presentation(plan).density===1&&typeof document!=='undefined'){
+        if(!fallbackPixels){fallbackPixels=document.createElement('canvas');fallbackPixels.width=480;fallbackPixels.height=304;}
+        drawBase(fallbackPixels,s,clock,preview,true);
+        const c=canvas.getContext('2d');c.imageSmoothingEnabled=false;
+        c.drawImage(fallbackPixels,...viewport(s,preview,camera),0,0,canvas.width,canvas.height);
+      }else drawBase(canvas,s,clock,preview,false,camera);
     }
     root.TownCutawayWeather?.draw(canvas,s,clock,preview,camera,weather);
   }
-  root.TownCutawayRenderer={draw,drawBase,drawSurface,viewport,project,siteScale,drawComponent:modulePart,drawPart,smoke};
+  root.TownCutawayRenderer={draw,drawBase,drawSurface,viewport,project,siteScale,presentation,drawComponent:modulePart,drawPart,smoke};
 })(globalThis);

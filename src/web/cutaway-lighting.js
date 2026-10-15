@@ -12,6 +12,7 @@
     uniform vec3 colors[8];
     uniform vec2 pixel;
     uniform float wilderness;
+    uniform vec4 pixelStyle;
     float relief(vec2 p){
       vec4 m=texture2D(surface,p);
       // Derive a shallow height field from authored pixel accents, not a 16px grid.
@@ -23,11 +24,12 @@
       vec2 pos=vec2(uv.x*480.0,(1.0-uv.y)*304.0);
       vec2 slope=vec2(relief(uv-pixel*vec2(1,0))-relief(uv+pixel*vec2(1,0)),
         relief(uv+pixel*vec2(0,1))-relief(uv-pixel*vec2(0,1)));
-      vec3 normal=normalize(vec3(slope*mix(2.8,0.7,wilderness),1.0));
+      vec3 normal=normalize(vec3(slope*mix(2.8,0.7,wilderness)*pixelStyle.x,1.0));
       float facing=max(dot(normal,normalize(vec3(-0.5,-0.7,1.0))),0.0);
       // Cool dusk environment; keep construction and pets legible without a lamp.
       vec3 illumination=mix(vec3(0.53,0.66,0.83),vec3(0.48,0.54,0.65)+facing*0.26,material.a);
       illumination=mix(illumination,mix(vec3(.86,.93,1.0),vec3(.72,.65,.57)+facing*.15,material.a),wilderness);
+      illumination=mix(illumination,vec3(1.0),pixelStyle.z);
       vec3 halo=vec3(0.0);
       for(int i=0;i<8;i++){
         if(lights[i].w<=0.0)continue;
@@ -35,6 +37,7 @@
         float radius=max(lights[i].z,1.0);
         float distanceToLight=length(delta);
         float falloff=pow(max(0.0,1.0-distanceToLight/radius),2.0);
+        if(pixelStyle.w>0.0)falloff=floor(falloff*pixelStyle.w)/pixelStyle.w;
         if(falloff<=0.0)continue;
         // Installed side walls, roof and floor block light. Backdrop walls receive it.
         float visibility=1.0;
@@ -45,7 +48,7 @@
         }
         float facingLight=mix(1.0,max(dot(normal,normalize(vec3(delta,26.0))),0.0),material.a);
         illumination+=colors[i]*falloff*(0.35+facingLight)*lights[i].w*visibility;
-        halo+=colors[i]*exp(-distanceToLight*distanceToLight/145.0)*0.09*lights[i].w*visibility;
+        halo+=colors[i]*exp(-distanceToLight*distanceToLight/145.0)*0.09*lights[i].w*visibility*pixelStyle.y;
       }
       vec3 result=base*illumination+halo;
       // Soft highlight compression keeps texture visible beside warm emitters.
@@ -61,11 +64,11 @@
     const origin=plan.modular?root.TownModules.origin(plan):240;
     for(const p of preview?plan.parts:s.installed){
       const source=p.tileSource||p;
-      const extra=plan.artStyle==='woodland-v3'&&source.kind==='wall-shelf';
+      const anchor=root.TownCottageArt?.lampAnchor(plan,source);
+      const extra=!!anchor?.emitter;
       const kind=extra?'lamp':source.kind||source.asset;
       if(!['lamp','hearth','window'].includes(kind)||seen.has(source.id))continue;
       const left=origin+source.x*16,top=272-(source.y+source.h)*16;
-      const anchor=root.TownCottageArt?.lampAnchor(plan,source);
       // Existing lamp tasks still activate from their original installation
       // cell. Only the displayed light centre follows the atlas's actual flame.
       const gateX=extra?anchor?.x:left+(source.light?.x??(kind==='lamp'?8:source.w*8));
@@ -92,14 +95,18 @@
       if(light.kind!=='lamp')continue;
       const {x,y,pulse}=light,radius=12+6*pulse;
       c.save();
+      if(root.TownCutawayRenderer?.presentation(s.plan).halo!==0){
       const glow=c.createRadialGradient(x,y,0,x,y,radius);
       glow.addColorStop(0,`rgba(255,181,76,${.16*pulse})`);
       glow.addColorStop(.35,`rgba(242,143,49,${.075*pulse})`);glow.addColorStop(1,'rgba(242,143,49,0)');
       c.fillStyle=glow;c.fillRect(x-radius,y-radius,radius*2,radius*2);
+      }
       if(light.glass){
         // Tint only the glass interior, then repaint the tiny flame. The brass
         // frame and independent furniture sprite retain their authored detail.
         const [w,h]=light.glass;
+        const crisp=root.TownCutawayRenderer?.presentation(s.plan).density===1;
+        if(crisp){c.fillStyle=pulse>.8?'#f6d47c':'#dab064';c.fillRect(Math.round(x-w/2),Math.round(y-h/2),w,h);c.restore();continue;}
         c.fillStyle=`rgba(111,51,13,${.25+(1-pulse)*.7})`;c.fillRect(x-w/2,y-h/2,w,h);
         const height=1.5+Math.round(pulse*3)/2,dx=Math.round(Math.sin(time*7+x)*.6)/2;
         c.fillStyle='#e99a36';c.fillRect(Math.round((x+dx-.5)*2)/2,y+1-height,1.5,height);
@@ -142,6 +149,7 @@
       p.lightLocation=gl.getUniformLocation(p.program,'lights[0]');p.colorLocation=gl.getUniformLocation(p.program,'colors[0]');
       p.pixelLocation=gl.getUniformLocation(p.program,'pixel');
       p.wildernessLocation=gl.getUniformLocation(p.program,'wilderness');
+      p.pixelStyleLocation=gl.getUniformLocation(p.program,'pixelStyle');
       p.lightData=new Float32Array(MAX_LIGHTS*4);p.colorData=new Float32Array(MAX_LIGHTS*3);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
       return p;
@@ -158,7 +166,8 @@
       if(!pipeline){pipeline=create();if(!pipeline){unavailable=true;return false;}}
       const p=pipeline,gl=p.gl;if(p.lost||gl.isContextLost())return false;
       // Extra artwork texels do not change the 16-unit construction grid.
-      const density=s.plan?.artStyle==='creek-v2'&&(preview||s.status==='done')?4:s.plan?.wilderness||s.plan?.artStyle?.startsWith('woodland-')?2:1;
+      const style=root.TownCutawayRenderer.presentation(s.plan);
+      const density=style.density??(s.plan?.artStyle==='creek-v2'&&(preview||s.status==='done')?4:s.plan?.wilderness||s.plan?.artStyle?.startsWith('woodland-')?2:1);
       const resized=p.density!==density;
       if(resized){
         p.density=density;p.output.width=WIDTH*density;p.output.height=HEIGHT*density;
@@ -194,6 +203,7 @@
       gl.uniform4fv(p.lightLocation,p.lightData);gl.uniform3fv(p.colorLocation,p.colorData);
       gl.uniform2f(p.pixelLocation,1/p.output.width,1/p.output.height);
       gl.uniform1f(p.wildernessLocation,s.plan?.wilderness?1:0);
+      gl.uniform4f(p.pixelStyleLocation,style.relief??1,style.halo??1,style.ambient??0,style.lightSteps??0);
       gl.viewport(0,0,p.output.width,p.output.height);gl.drawArrays(gl.TRIANGLES,0,6);
       const c=canvas.getContext('2d');c.imageSmoothingEnabled=false;
       c.drawImage(p.output,...root.TownCutawayRenderer.viewport(s,preview,camera).map(v=>v*density),0,0,canvas.width,canvas.height);
