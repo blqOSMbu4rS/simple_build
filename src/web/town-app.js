@@ -1,14 +1,14 @@
 (function(root){
  'use strict';
  const E=root.TownGrowthEngine,C=root.TownGrowthConfig.create(),R=root.TownGrowthRenderer,T=root.TownSessionClock,$=id=>document.getElementById(id),key=E.SAVE_KEY;
- let s=null,raw=null,level='all',loadError=null,lastSave=0,lastUI=0,saveError='';
+ let s=null,raw=null,level='all',loadError=null,lastSave=0,lastUI=0,saveError='',debugSpeed=1;
  const clock=T.create(performance.now()),canvas=$('town-scene');
  const names={preparing:'安排搬迁与设施停工',work:'逐件施工',settling:'居民入住验收',production:'生产',install:'搬运安装',dismantle:'拆解回收',move:'完整搬出家具',reuse:'复用家具',relocate:'搬迁中'};
  const formatCost=a=>Object.entries(a).filter(([,n])=>n).map(([k,n])=>C.materials[k]+' '+n).join('、')||'无';
  const roomName=home=>{const b=C.beds.find(b=>b.id===home);return b?C.rooms.find(r=>r.id===b.room).name+(b.temporary?' · 临时铺位':''):'尚未入住';};
  function restore(){try{raw=localStorage.getItem(key);s=raw?E.restore(raw,C):E.create(C);if(raw)s.paused=true;loadError=null;}catch(e){loadError=e.message;s=null;$('load-error-text').textContent=e.message;}$('load-error').hidden=!loadError;}
  function persist(){if(!s||loadError)return false;try{localStorage.setItem(key,E.save(s,C));lastSave=s.time;saveError='';return true;}catch(e){saveError='保存失败：'+e.message;return false;}}
- function capture(){T.capture(clock,performance.now(),!!s&&!s.paused);if(s)T.pump(clock,s,{advance:(state,dt)=>E.advance(state,dt,C)},240);}
+ function capture(){T.capture(clock,performance.now(),!!s&&!s.paused,debugSpeed);if(s)T.pump(clock,s,{advance:(state,dt)=>E.advance(state,dt,C)},240);}
  function act(f){capture();if(!s||clock.debt>=T.STEP)return;f();persist();refresh();}
  function download(text,name){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
  function restart(){if(!confirm('将原记录另存备份，再开始一个新小镇？旧版建造的记录不受影响。'))return;
@@ -34,10 +34,10 @@
   $('resident-count').textContent=s.pets.filter(p=>p.home).length+' / 3';
  }
  function refresh(){
-  for(const id of ['pause','preview-project','speed','priority','export-save','new-game'])$(id).disabled=!s;
+  for(const id of ['pause','preview-project','speed','priority','export-save','new-game','debug-speed'])$(id).disabled=!s;
   if(!s)return;const stock=E.inventory(s,C);for(const k of Object.keys(C.materials))$('stock-'+k).textContent=stock[k];
   $('town-time').textContent='小镇时间 '+Math.floor(s.time/60)+' : '+String(Math.floor(s.time%60)).padStart(2,'0');
-  $('pause').textContent=s.paused?'继续小镇':'暂停小镇';$('pause').setAttribute('aria-pressed',String(s.paused));$('speed').value=s.multiplier;$('priority').value=s.gatherPriority;
+  $('pause').textContent=s.paused?'继续小镇':'暂停小镇';$('pause').setAttribute('aria-pressed',String(s.paused));$('speed').value=s.multiplier;$('priority').value=s.gatherPriority;$('debug-speed').value=debugSpeed;
   $('save-status').textContent=saveError||(s.paused?'已暂停 · 进度已保存':'本地自动保存');$('save-status').className=saveError?'save-warning':'';$('message').textContent=s.message;
   const p=s.project,plan=C.plans[s.completed.length],done=!plan;$('chapter-number').textContent=done?'A TOWN OF OUR OWN':'CHAPTER '+String(s.completed.length+1).padStart(2,'0')+' / 05';$('project-title').textContent=done?'小镇开始了日常':plan.name;
   $('objective').textContent=done?'五项工程都已完成。木作、采棉与织布仍在继续。看看住处，或等一等下一批材料。':plan.description;
@@ -51,6 +51,7 @@
  for(const l of C.view.levels){const b=document.createElement('button');b.textContent=l.name;b.dataset.level=l.id;b.setAttribute('aria-pressed',String(l.id===level));b.onclick=()=>{level=l.id;for(const b of $('views').children)b.setAttribute('aria-pressed',String(b.dataset.level===level));refresh();};$('views').append(b);}
  for(const [k,label]of Object.entries(C.materials)){const b=document.createElement('button');b.textContent='转存 4 '+label;b.onclick=()=>act(()=>E.stow(s,k,C));$('stow-buttons').append(b);}
  $('pause').onclick=()=>act(()=>{s.paused=!s.paused;});$('speed').onchange=()=>act(()=>{s.multiplier=Number($('speed').value);});$('priority').onchange=()=>act(()=>{s.gatherPriority=$('priority').value;});
+ $('debug-speed').onchange=()=>act(()=>{const rate=Number($('debug-speed').value);debugSpeed=[1,30].includes(rate)?rate:1;});
  $('preview-project').onclick=showPreview;$('close-preview').onclick=()=>{$('project-dialog').close();};$('cancel-project').onclick=()=>act(()=>E.cancelProject(s));
  $('start-project').onclick=()=>act(()=>{const choices=Object.fromEntries([...$('moving-choices').querySelectorAll('select')].map(s=>[s.dataset.pet,s.value]));if(E.startProject(s,C,choices)){$('project-dialog').close();}else $('preview-error').textContent=s.message;});
  $('export-save').onclick=()=>{capture();if(s)download(E.save(s,C),'little-town.json');};$('export-original').onclick=()=>download(raw||'','little-town-unreadable.json');$('new-game').onclick=restart;$('backup-restart').onclick=restart;
