@@ -1,56 +1,10 @@
 <!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>撒下一座小镇 · 建造</title>
-  <link rel="stylesheet" href="./cutaway.css?v=20261005-levels">
-  <script defer src="./pet-work-art.js?v=20261001-config"></script>
-  <script defer src="./construction-config.js?v=20261010-three"></script>
-  <script defer src="./cutaway-legacy-plans.js"></script>
-  <script defer src="./cutaway-plans.js?v=20260930-retreat-v3"></script>
-  <script defer src="./wilderness-plans.js?v=20261002-weather"></script>
-  <script defer src="./island-legacy-plans.js?v=20261002-island"></script>
-  <script defer src="./island-v2-plans.js?v=20261003-island-v2"></script>
-  <script defer src="./island-v3-plans.js?v=20261003-island-joins"></script>
-  <script defer src="./island-v4-plans.js?v=20261003-island-v4"></script>
-  <script defer src="./island-v5-plans.js?v=20261003-island-v5"></script>
-  <script defer src="./island-v6-plans.js?v=20261003-island-v6"></script>
-  <script defer src="./island-plans.js?v=20261003-island-rug"></script>
-  <script defer src="./island-experience-plan.js?v=20261003-experience"></script>
-  <script defer src="./mini-mountain-plans.js?v=20261009-build"></script>
-  <script defer src="./mini-mountain-v2-plans.js?v=20261009-dig-first"></script>
-  <script defer src="./mini-mountain-v3-plans.js?v=20261010-surfaces"></script>
-  <script defer src="./mini-mountain-3d-plans.js?v=20261013-windows"></script>
-  <script defer src="./wilderness-gather.js?v=20261005-eight"></script>
-  <script defer src="./art-layout.js"></script>
-  <script defer src="./modules.js"></script>
-  <script defer src="./cutaway-motion.js?v=20261005-levels"></script>
-  <script defer src="./engine.js?v=20261005-eight"></script>
-  <script defer src="./assets/cottage/furniture-v1.js?v=20261001-small-scenery"></script>
-  <script defer src="./assets/cottage/roof-v1.js?v=20261001-small-scenery"></script>
-  <script defer src="./assets/cottage/wall-v1.js?v=20261001-small-scenery"></script>
-  <script defer src="./assets/cottage/roof-v2.js?v=20261001-small-scenery"></script>
-  <script defer src="./assets/cottage/furniture-retro-v4.js?v=20261015-retro"></script>
-  <script defer src="./assets/cottage/forest-retro-v4.js?v=20261015-retro"></script>
-  <script defer src="./assets/wilderness/runtime.js?v=20261001-small-scenery"></script>
-  <script defer src="./wilderness-art.js?v=20261001-config"></script>
-  <script defer src="./cottage-art.js?v=20261015-retro"></script>
-  <script defer src="./diagonal-renderer.js?v=20261013-startup"></script>
-  <script defer src="./three-scene-loader.js?v=20261013-windows"></script>
-  <script defer src="./cutaway-renderer.js?v=20261015-retro"></script>
-  <script defer src="./cutaway-lighting.js?v=20261015-retro"></script>
-  <script defer src="./cutaway-weather.js?v=20261005-eight"></script>
-  <script defer src="./session-clock.js?v=20261003-experience"></script>
-  <script defer src="./experience-ui.js?v=20261003-experience"></script>
-  <script defer src="./cutaway-app.js?v=20261013-startup"></script>
-</head>
-<body>
-  <main>
-    <header><div><small>PIECE BY PIECE · COZY BUILD</small><h1>撒下一座小镇 <span>房子慢慢长出来。</span></h1><p>在森林、溪谷、小岛，或云海中的悬浮山上安家。小伙伴就地取材，一点点搭起小屋；在悬山还能向下挖出洞室，切换楼层看看进展。</p></div></header>
-    <section class="choices" aria-label="选择房子"><div class="heading"><strong>01 / 选一处要建的房子</strong><span>开工前可以更换</span></div><div id="plans" class="cards"></div></section>
-    <section class="site" aria-label="建造场景"><div class="site-title"><span id="title">准备开工</span><span id="progress">0 / 0</span></div><div class="view-controls"><span id="view-hint">放大后左键拖动平移 · 滚轮缩放</span><label>天气 <select id="weather"><option value="clear">晴天</option><option value="rain">雨天</option><option value="snow">雪天</option></select></label><button id="atmosphere-pause" type="button" aria-pressed="false">暂停氛围</button><button id="reset-view" type="button">恢复视角</button></div><div id="floor-controls" class="floor-controls" role="group" aria-label="查看楼层" hidden></div><p id="floor-status" class="floor-status" aria-live="polite" hidden></p><div class="scene-wrap"><div id="feedback" role="status" hidden></div><canvas id="scene" width="960" height="608" aria-label="宠物逐件建造与开挖的场景" aria-describedby="view-hint"></canvas></div><div class="site-foot"><span id="message" aria-live="polite">选择一处空地，看房子慢慢长出来。</span><span id="status">本地自动存档</span></div></section>
-    <section class="controls"><div class="heading"><strong id="supply-heading">02 / 撒材料，看它们搭建</strong><span id="supply-hint">缺料时现场会保留，补齐后继续</span></div><div id="gather-controls" class="buttons"><button data-gather="S" hidden>收集石料</button><button data-gather="W" hidden>砍木截料</button><button data-gather="B" hidden>拾枝收草</button><button data-gather="D" hidden>取土和泥</button></div><details class="developer"><summary>开发验证</summary><div id="developer-buttons" class="buttons"><div id="materials" class="buttons"><button data-material="W">＋8 木材 <b id="stock-W">0</b></button><button data-material="S">＋6 石材 <b id="stock-S">0</b></button><button data-material="C">＋2 布料 <b id="stock-C">0</b></button><button data-material="B" hidden>树枝 <b id="stock-B">0</b></button><button data-material="D" hidden>泥土 <b id="stock-D">0</b></button></div><label>模拟快进 <select id="dev-speed"><option value="1">×1</option><option value="10">×10</option><option value="30">×30</option></select></label><button id="auto-gather" hidden>自动采集：开</button><button id="fill">补足这座房子的用料</button></div></details><div class="buttons player-controls"><label>施工 <select id="speed"><option value="1">正常</option><option value="2">双倍</option></select></label><button id="mute" aria-pressed="false">静音</button><button id="cancel-gather" hidden>取消采集</button><button id="play" class="primary">开始建造</button></div><p id="gather-status" class="gather-status" hidden></p><div class="foot"><span id="cost"></span><button id="reset">重新开始</button></div></section>
-  </main>
-</body>
-</html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#375b4f"><title>撒下一座小镇 · 林边生长记</title><link rel="stylesheet" href="./town.css?v=1">
+<script defer src="./construction-config.js"></script><script defer src="./cutaway-motion.js"></script><script defer src="./pet-work-art.js"></script><script defer src="./session-clock.js"></script><script defer src="./town-config.js?v=1"></script><script defer src="./town-engine.js?v=1"></script><script defer src="./town-renderer.js?v=1"></script><script defer src="./town-app.js?v=1"></script></head>
+<body><main class="shell"><header><div><p class="eyebrow">A LITTLE TOWN, STILL GROWING</p><h1>撒下一座小镇<span>林边生长记</span></h1></div><nav><span class="storage-note">本地保存 · 无离线收益</span><a href="./legacy.html">旧版建造 ↗</a></nav></header>
+<section id="load-error" class="error" role="alert" hidden><strong>记录暂时无法读取，原存档仍保留。</strong><p id="load-error-text"></p><button id="export-original">下载原记录</button><button id="backup-restart">备份后新开局</button></section>
+<section class="inventory" aria-label="小镇库存"><div class="resource"><span class="symbol">▰</span><label>木材</label><div><b id="stock-W">6</b> <em>/ 40</em></div></div><div class="resource"><span class="symbol">◆</span><label>石材</label><div><b id="stock-S">3</b> <em>/ 20</em></div></div><div class="resource"><span class="symbol">✿</span><label>棉花</label><div><b id="stock-Q">0</b> <em>/ 8</em></div></div><div class="resource"><span class="symbol">▧</span><label>布料</label><div><b id="stock-C">0</b> <em>/ 12</em></div></div><span class="clock" id="town-time">小镇时间 0 : 00</span></section>
+<div class="layout"><section class="landscape" aria-label="持久建筑群"><div class="scene-top"><strong>林边的一小片天地</strong><div class="views" id="views" role="group" aria-label="查看建筑群与楼层"></div></div><div class="world"><canvas id="town-scene" width="960" height="528" aria-label="正面剖面小镇；宠物逐格施工、搬迁和生产"></canvas></div><div class="caption"><span id="message" role="status">先建一间小屋，让来访的小伙伴安家。</span><span id="save-status">本地自动保存</span></div><div class="time-controls"><button id="pause">暂停小镇</button><label>施工 <select id="speed"><option value="1">正常 ×1</option><option value="2">双倍 ×2</option></select></label><label>取材优先 <select id="priority"><option value="auto">自动</option><option value="W">木材</option><option value="S">石材</option></select></label><button id="export-save">导出进度</button></div>
+<details class="tools"><summary>营地与库存</summary><p>仓满后停止新批次，已领取材料留在途中。营地料垛最多转存 12 份，仍可用于施工和加工。</p><div id="stow-buttons" class="tool-row"></div><p id="yard-status"></p><p id="furniture-status"></p><div id="furniture-buttons" class="tool-row"></div><p>暂停冻结施工、生产、植物再生和搬迁。页面会话后台会补算；刷新后暂停，不补算关闭期间的时间。</p><button id="new-game">备份并重新开始</button></details></section>
+<aside><section class="chapter" aria-label="工程与目标"><p class="eyebrow" id="chapter-number">CHAPTER 01 / 05</p><h2 id="project-title">林边安家</h2><p id="objective"></p><button class="primary" id="preview-project">预览下一项工程</button><p id="project-status" aria-live="polite"></p><progress id="project-progress" hidden></progress><div id="project-buttons"><button id="cancel-project" hidden>取消工程</button></div></section><section class="residents" aria-label="居民与来访"><h2>一起生活的小伙伴 <span id="resident-count"></span></h2><div id="residents"></div></section></aside></div><footer><span>每一块木头，都会留下来。</span><span>五项工程 · 一座持续生长的小镇</span></footer></main>
+<dialog id="project-dialog" aria-labelledby="preview-title"><h2 id="preview-title"></h2><p id="preview-description"></p><div class="diff-grid"><section><h3>保留</h3><div id="diff-retained"></div></section><section><h3>完整搬移 / 复用</h3><div id="diff-moved"></div></section><section><h3>拆解</h3><div id="diff-removed"></div></section><section><h3>新增</h3><div id="diff-added"></div></section></div><p id="preview-cost"></p><p id="preview-recovery"></p><p id="impact"></p><div id="moving-choices"></div><p id="preview-error" class="save-warning" role="alert"></p><p>第一项拆装或安装开始前可取消；开始后仅可暂停和继续。不需要备齐全部材料。</p><div class="dialog-actions"><button id="close-preview">再看看</button><button class="primary" id="start-project">确认安排并开工</button></div></dialog></body></html>
