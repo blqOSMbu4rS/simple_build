@@ -40,6 +40,23 @@
  function note(s,text){if(s.message===text)return;s.message=text;s.events.unshift({time:s.time,text});s.events.length=Math.min(s.events.length,16);}
  function mint(s,kind,n,state,owner,source){const out=[];for(let i=0;i<n;i++){const m={id:s.nextMaterial++,kind,state,owner,source};s.materials.push(m);out.push(m.id);}s.ledger.created[kind]+=n;return out;}
  function inventory(s,c=CONFIG.create(),includeYard=true){const v=zero(c);for(const m of s.materials)if(m.state==='stock'||includeYard&&['yard','salvage'].includes(m.state))v[m.kind]++;return v;}
+ // Explicit debug mutations keep real identities and accounting; normal production never calls this.
+ function debugSetInventory(s,targets,c=CONFIG.create()){
+  validate(s,c);requireRule(targets&&typeof targets==='object'&&!Array.isArray(targets)&&Object.keys(targets).length>0,'请选择要修改的材料');
+  const stock=inventory(s,c,false);
+  for(const [k,n]of Object.entries(targets)){
+   requireRule(Object.hasOwn(c.materials,k)&&Number.isInteger(n)&&n>=0,'材料数量必须为非负整数');
+   requireRule(n<=Math.max(0,c.capacity[k]-reserved(s,k)),c.materials[k]+'数量超过可用仓位；请为在途批次保留空间');
+  }
+  if(Object.entries(targets).every(([k,n])=>stock[k]===n))return false;
+  if(!s.ledger.debug)s.ledger.debug={added:zero(c),removed:zero(c)};
+  for(const [k,n]of Object.entries(targets)){
+   const delta=n-stock[k];
+   if(delta>0){mint(s,k,delta,'stock',null,'debug');s.ledger.debug.added[k]+=delta;}
+   if(delta<0){const ids=new Set(s.materials.filter(m=>m.kind===k&&m.state==='stock').slice(0,-delta).map(m=>m.id));s.materials=s.materials.filter(m=>!ids.has(m.id));s.ledger.debug.removed[k]+=-delta;}
+  }
+  note(s,'Debug 已修改仓内材料；施工、家具和在途材料保持不变。');validate(s,c);return true;
+ }
  const placed=(s,id)=>s.objects[id]?.status==='installed';
  function roomReady(s,id,c){const r=data(c).rooms.get(id);return !!r&&(r.initial||r.requirements.every(p=>placed(s,p))&&r.access.every(p=>placed(s,p)));}
  const disabled=(s,id)=>!!s.project?.disabled&&s.project.affected.includes(id);
@@ -212,7 +229,9 @@
    if(['install','dismantle','move','reuse'].includes(a.type)){const t=c.plans[s.completed.length]?.tasks[s.project?.at];requireRule(s.project?.phase==='work'&&s.project.locked&&t?.type===a.type&&t.target===(a.part||a.group)&&c.pets.find(p=>p.id===pet.id).capabilities.includes('build'),'施工归属损坏');if(a.motion){requireRule(a.motion.elapsed===a.elapsed&&a.motion.total===a.total&&same(a.motion.materialIds,a.materials),'搬运动作损坏');MOT.validate(a.motion,s.materials);}}
   }
   if(s.project){const p=s.project,plan=c.plans[s.completed.length];requireRule(plan&&p.plan===plan.id&&['preparing','work','settling'].includes(p.phase)&&Number.isInteger(p.at)&&p.at>=0&&p.at<=plan.tasks.length&&same(p.affected,plan.disable)&&typeof p.locked==='boolean'&&p.disabled===(p.phase==='work'),'工程进度损坏');}
-  const ids=new Set();for(const m of s.materials){requireRule(Number.isInteger(m.id)&&m.id>0&&m.id<s.nextMaterial&&!ids.has(m.id)&&m.kind in c.materials&&['stock','yard','salvage','installed','transport','furniture','transit'].includes(m.state)&&(m.source==='initial'||d.recipes.has(m.source)),'材料身份损坏');ids.add(m.id);
+  const debug=s.ledger.debug;
+  if(debug)for(const field of ['added','removed'])requireRule(debug[field]&&same(Object.keys(debug[field]).sort(),kinds(c).sort())&&Object.values(debug[field]).every(n=>Number.isSafeInteger(n)&&n>=0),'调试材料账本损坏');
+  const ids=new Set();for(const m of s.materials){requireRule(Number.isInteger(m.id)&&m.id>0&&m.id<s.nextMaterial&&!ids.has(m.id)&&m.kind in c.materials&&['stock','yard','salvage','installed','transport','furniture','transit'].includes(m.state)&&(m.source==='initial'||d.recipes.has(m.source)||m.source==='debug'&&debug),'材料身份损坏');ids.add(m.id);
    if(['stock','yard','salvage'].includes(m.state))requireRule(m.owner===null,'库存归属损坏');
    if(m.state==='transit')requireRule(s.pets.some(p=>p.action?.id===m.owner&&p.action.materials.includes(m.id)&&p.action.type==='production'),'交付归属损坏');
    if(m.state==='transport')requireRule(s.pets.some(p=>p.action?.part===m.owner&&p.action.materials.includes(m.id)&&p.action.type==='install'),'施工在途归属损坏');
@@ -232,13 +251,14 @@
   requireRule(Object.keys(s.objects).length===c.parts.length&&Object.keys(s.furniture).length===c.groups.length,'多余城镇对象');
   const production=s.pets.filter(p=>p.action?.type==='production').map(p=>p.action);
   for(const r of c.recipes){const b=s.ledger.recipes[r.id];requireRule(b&&Number.isInteger(b.started)&&Number.isInteger(b.finished)&&b.finished>=0&&b.started-b.finished===production.filter(a=>a.recipe===r.id&&!a.minted).length,'配方账本损坏');}
-  for(const k of kinds(c)){const created=c.initial[k]+c.recipes.reduce((n,r)=>n+s.ledger.recipes[r.id].finished*(r.output[k]||0),0),consumed=c.recipes.reduce((n,r)=>n+s.ledger.recipes[r.id].started*(r.input[k]||0),0);
-   requireRule(s.ledger.created[k]===created&&s.ledger.consumed[k]===consumed&&Number.isInteger(s.ledger.lost[k])&&s.ledger.lost[k]>=0&&created===s.materials.filter(m=>m.kind===k).length+consumed+s.ledger.lost[k],'材料来源／加工／损耗不守恒');
+  for(const k of kinds(c)){const created=c.initial[k]+c.recipes.reduce((n,r)=>n+s.ledger.recipes[r.id].finished*(r.output[k]||0),0)+(debug?.added[k]||0),consumed=c.recipes.reduce((n,r)=>n+s.ledger.recipes[r.id].started*(r.input[k]||0),0);
+   requireRule(s.ledger.created[k]===created&&s.ledger.consumed[k]===consumed&&Number.isInteger(s.ledger.lost[k])&&s.ledger.lost[k]>=0&&created===s.materials.filter(m=>m.kind===k).length+consumed+s.ledger.lost[k]+(debug?.removed[k]||0),'材料来源／加工／损耗不守恒');
+   requireRule(s.materials.filter(m=>m.kind===k&&m.source==='debug').length<=(debug?.added[k]||0),'调试材料来源损坏');
    requireRule(inventory(s,c,false)[k]<=c.capacity[k],'仓库超容');
   }return true;
  }
  function save(s,c=CONFIG.create()){validate(s,c);return JSON.stringify(s);}
  function restore(text,c=CONFIG.create()){requireRule(typeof text==='string'&&text.length<4000000,'存档过大');const s=JSON.parse(text);validate(s,c);return s;}
- const api={STEP,SAVE_KEY,create,advance,inventory,preview,startProject,cancelProject,assignHome,parkFurniture,stow,roomReady,roomAvailable,bedAvailable,comfort,actionPoint,workStatus,validate,validateConfig,save,restore};
+ const api={STEP,SAVE_KEY,create,advance,inventory,debugSetInventory,preview,startProject,cancelProject,assignHome,parkFurniture,stow,roomReady,roomAvailable,bedAvailable,comfort,actionPoint,workStatus,validate,validateConfig,save,restore};
  if(node)module.exports=api;else root.TownGrowthEngine=api;
 })(globalThis);
