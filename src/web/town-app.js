@@ -27,9 +27,13 @@
   if(original!==null&&original!==undefined)localStorage.setItem(backup,original);
   localStorage.setItem(key,encoded);s=next;raw=null;loadError=null;saveError='';resetClock();$('load-error').hidden=true;
  }
- function restart(){
+ function confirmAction(message){
+  const dialog=$('confirm-dialog');text('confirm-message',message);dialog.returnValue='';
+  return new Promise(resolve=>{dialog.addEventListener('close',()=>resolve(dialog.returnValue==='accept'),{once:true});dialog.showModal();});
+ }
+ async function restart(){
   capture();if(busy||clock.debt>=T.STEP){toast('正在处理进度，请稍候再开始新小镇。');return;}
-  if(!confirm('将当前记录另存备份，再开始一个新小镇？旧版建造的记录不受影响。'))return;
+  if(!await confirmAction('将当前记录另存备份，再开始一个新小镇？旧版建造的记录不受影响。'))return;
   try{replaceState(E.create(C),key+':backup:'+Date.now());debugSpeed=1;level=overview.id;document.querySelectorAll('dialog[open]').forEach(d=>d.close());refresh();toast('已备份原记录，新小镇准备好了。');}
   catch(e){text('settings-status','未能建立新记录，原进度保留：'+e.message);if(loadError)text('load-error-text','未能备份，未覆盖原记录：'+e.message);toast('操作失败，原记录仍保留。');}
  }
@@ -163,7 +167,7 @@
   text('town-name',C.name);text('scene-name',C.name+' · 建筑群');
   for(const [i,k]of kinds.entries()){
    const button=el('button','resource-card');button.setAttribute('aria-label',C.materials[k]+'可用库存，查看仓库');button.append(el('span','resource-symbol',['▰','◆','✿','▧'][i%4]),el('span','resource-name',C.materials[k]));
-   const count=el('b','','0');count.id='stock-'+k;const detail=el('small');detail.id='stock-detail-'+k;button.append(count,detail);button.onclick=()=>{setTab('storage');$('tab-storage').focus();if(matchMedia('(max-width:760px)').matches)$('tab-storage').scrollIntoView({block:'center',behavior:'auto'});};$('resource-cards').append(button);
+   const count=el('b','','0');count.id='stock-'+k;const detail=el('small');detail.id='stock-detail-'+k;button.append(count,detail);button.onclick=()=>{setTab('storage');$('tab-storage').focus();};$('resource-cards').append(button);
    const row=el('div','warehouse-row');row.dataset.kind=k;const head=el('div','warehouse-heading');head.append(el('strong','',C.materials[k]+' · 仓内'),el('b'));const meter=el('div','stock-meter');meter.append(el('span'));
    const source=C.recipes.filter(r=>r.output[k]).map(r=>r.name).join(' / ');row.append(head,meter,el('p','stock-detail'),el('p','','来源：'+source),el('p','availability'));
    const stow=el('button','','转存最多 4 份到营地');stow.onclick=()=>act(()=>toast(E.stow(s,k,C)?'已转存，材料仍可用于施工和加工。':'暂无材料或营地料垛已满。'));row.append(stow);$('warehouse').append(row);
@@ -172,7 +176,7 @@
   for(const p of C.plans){const li=el('li'),info=el('div');info.append(el('strong','',title(p)),el('small'));li.append(el('span','step-dot'),info);$('roadmap').append(li);}
   for(const def of C.pets){const row=el('div','resident');row.dataset.pet=def.id;const mark=el('span','pet-mark');mark.style.setProperty('--pet',def.color);mark.setAttribute('aria-hidden','true');const info=el('div'),name=el('div');name.append(el('strong','',def.name),el('span','pet-role',def.capabilities.includes('build')?'建造伙伴':C.recipes.filter(r=>def.capabilities.includes(r.capability)).map(r=>r.name).join(' / ')));
    const details=el('details'),select=el('select');select.setAttribute('aria-label','为'+def.name+'分配床位');select.onchange=()=>act(()=>toast(E.assignHome(s,def.id,select.value,C)?'已安排搬迁，小伙伴会自己过去。':'暂时无法搬迁，请检查床位与工作状态。'));details.append(el('summary','','安排住处'),select,el('p','home-hint'));info.append(name,el('p','home'),el('p','activity'),details);row.append(mark,info);$('residents').append(row);}
-  for(const r of C.rooms){const row=el('article','room-card');row.dataset.room=r.id;const head=el('div','room-heading');head.append(el('strong','',r.name),el('span','state-pill'));const b=el('button','','查看所在区域');b.onclick=()=>{setView((C.view.levels.find(v=>v.rooms?.includes(r.id))||overview).id);if(matchMedia('(max-width:760px)').matches)canvas.scrollIntoView({block:'center',behavior:'auto'});};row.append(head,el('p','room-beds'),el('p','room-detail'),b);$('rooms').append(row);}
+  for(const r of C.rooms){const row=el('article','room-card');row.dataset.room=r.id;const head=el('div','room-heading');head.append(el('strong','',r.name),el('span','state-pill'));const b=el('button','','查看所在区域');b.onclick=()=>{setView((C.view.levels.find(v=>v.rooms?.includes(r.id))||overview).id);};row.append(head,el('p','room-beds'),el('p','room-detail'),b);$('rooms').append(row);}
   for(const l of C.view.levels){const b=el('button','',l.name);b.dataset.level=l.id;b.setAttribute('aria-pressed',String(l.id===level));b.onclick=()=>setView(l.id);$('views').append(b);}
   const tabs=[...document.querySelectorAll('[data-tab]')];for(const [i,tab]of tabs.entries()){tab.onclick=()=>setTab(tab.dataset.tab);tab.onkeydown=e=>{let n;if(e.key==='ArrowRight')n=(i+1)%tabs.length;if(e.key==='ArrowLeft')n=(i+tabs.length-1)%tabs.length;if(e.key==='Home')n=0;if(e.key==='End')n=tabs.length-1;if(n!==undefined){e.preventDefault();setTab(tabs[n].dataset.tab,true);}};}
   for(const b of document.querySelectorAll('[data-close]'))b.onclick=()=>$(b.dataset.close).close();
@@ -185,7 +189,7 @@
   $('export-save').onclick=()=>act(()=>{download(E.save(s,C),'little-town.json');text('settings-status','已导出当前进度。');});$('export-original').onclick=()=>download(raw||'','little-town-unreadable.json');
   $('new-game').onclick=restart;$('backup-restart').onclick=restart;
   $('import-save').onclick=()=>{if(!busy)$('import-file').click();};
-  $('import-file').onchange=async()=>{const file=$('import-file').files[0];$('import-file').value='';if(!file)return;try{if(file.size>=4000000)throw Error('文件过大');const next=E.restore(await file.text(),C);if(!confirm('导入将替换当前小镇，原记录会先备份。是否继续？'))return;capture();if(busy||clock.debt>=T.STEP)throw Error('正在处理进度，请稍后重试');next.paused=true;replaceState(next,key+':before-import:'+Date.now());debugSpeed=1;refresh();text('settings-status','导入成功，原记录已备份。关闭面板后点击继续小镇。');}catch(e){text('settings-status','导入失败，未替换原记录：'+e.message);}};
+  $('import-file').onchange=async()=>{const file=$('import-file').files[0];$('import-file').value='';if(!file)return;try{if(file.size>=4000000)throw Error('文件过大');const next=E.restore(await file.text(),C);if(!await confirmAction('导入将替换当前小镇，原记录会先备份。是否继续？'))return;capture();if(busy||clock.debt>=T.STEP)throw Error('正在处理进度，请稍后重试');next.paused=true;replaceState(next,key+':before-import:'+Date.now());debugSpeed=1;refresh();text('settings-status','导入成功，原记录已备份。关闭面板后点击继续小镇。');}catch(e){text('settings-status','导入失败，未替换原记录：'+e.message);}};
   $('debug-speed').onchange=()=>act(()=>{const rate=Number($('debug-speed').value);debugSpeed=[1,10,30].includes(rate)?rate:1;text('debug-result','全局速度已设为 ×'+debugSpeed+'；暂停仍冻结模拟。');});
   $('debug-material').onchange=()=>{if(s)$('debug-amount').value=E.inventory(s,C,false)[$('debug-material').value];updateDebug();};
   $('debug-set').onclick=()=>{const raw=$('debug-amount').value,n=raw.trim()===''?NaN:Number(raw),k=$('debug-material').value;debugMutation('修改'+C.materials[k],state=>E.debugSetInventory(state,{[k]:n},C));};
@@ -194,8 +198,16 @@
   $('debug-minute').onclick=()=>debugMutation('推进一分钟',state=>{if(state.paused)throw Error('小镇已暂停');E.advance(state,60,C);});
   $('debug-finish').onclick=()=>debugMutation('完成当前工程',async state=>{if(state.paused||!state.project)throw Error('需要一个正在运行的工程');let seconds=0;while(state.project&&seconds<3600){fill(state);E.advance(state,1,C);seconds++;if(seconds%30===0){text('debug-result',`正在补料与施工 · 已推进 ${seconds} 秒…`);await new Promise(resolve=>setTimeout(resolve,0));}}if(state.project)throw Error('工程仍被住处、家具容量或作业条件阻挡；未应用本次修改。');});
   $('debug-validate').onclick=()=>{try{capture();if(!s)throw Error('没有有效记录');E.validate(s,C);text('debug-result','检查通过：材料账本、对象身份、工程和床位状态一致。');}catch(e){text('debug-result','检查未通过：'+e.message);}};
-  $('debug-undo').onclick=()=>{if(busy)return;if(!confirm('恢复上次作弊前的备份？此后进度会被撤销，当前进度也会另存备份。'))return;try{capture();if(clock.debt>=T.STEP)throw Error('正在补算，请稍后重试');const next=E.restore(localStorage.getItem(backupKey),C);next.paused=true;replaceState(next,key+':before-debug-restore:'+Date.now());localStorage.removeItem(backupKey);debugSpeed=1;text('debug-result','已恢复作弊前的进度，小镇已暂停。');refresh();}catch(e){text('debug-result','未能恢复：'+e.message);}};
+  $('debug-undo').onclick=async()=>{if(busy)return;if(!await confirmAction('恢复上次作弊前的备份？此后进度会被撤销，当前进度也会另存备份。'))return;try{capture();if(clock.debt>=T.STEP)throw Error('正在补算，请稍后重试');const next=E.restore(localStorage.getItem(backupKey),C);next.paused=true;replaceState(next,key+':before-debug-restore:'+Date.now());localStorage.removeItem(backupKey);debugSpeed=1;text('debug-result','已恢复作弊前的进度，小镇已暂停。');refresh();}catch(e){text('debug-result','未能恢复：'+e.message);}};
  }
+ // A fixed desktop game surface; smaller hosts scale the whole interface uniformly.
+ function fitGame(){
+  const scale=Math.min(1,document.documentElement.clientWidth/1280,document.documentElement.clientHeight/720);
+  document.documentElement.style.setProperty('--game-scale',String(scale));
+  const viewport=document.querySelector('.game-viewport');
+  viewport.style.width=1280*scale+'px';viewport.style.height=720*scale+'px';
+ }
+ fitGame();window.addEventListener('resize',fitGame);
  setup();restore();refresh();
  document.addEventListener('visibilitychange',()=>{capture();persist();if(!document.hidden)refresh();});window.addEventListener('pagehide',()=>{capture();persist();});
  function frame(now){capture();if(s&&!document.hidden){if(!busy&&s.time-lastSave>=3)persist();if(now-lastUI>150){refresh();lastUI=now;}}requestAnimationFrame(frame);}requestAnimationFrame(frame);
