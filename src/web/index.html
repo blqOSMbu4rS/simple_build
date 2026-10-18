@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#203e38"><title>撒下一座小镇 · 林边生长记</title>
-  <link rel="stylesheet" href="./town.css?v=4">
+  <link rel="stylesheet" href="./town.css?v=5">
   <script defer src="./construction-config.js"></script><script defer src="./cutaway-motion.js"></script>
   <script defer src="./pet-work-art.js"></script><script defer src="./session-clock.js"></script>
   <script defer src="./town-config.js?v=1"></script><script defer src="./town-engine.js?v=3"></script>
@@ -11,17 +11,14 @@
 </head>
 <body>
 <div class="game-viewport"><main class="shell" aria-label="撒下一座小镇游戏窗口">
-  <header class="masthead">
-    <div class="brand"><span class="brand-mark" aria-hidden="true">⌂</span><div><h1>撒下一座小镇</h1><p id="town-name">林边生长记</p></div></div>
-  <section class="resource-strip" aria-label="可用材料，点击查看仓库"><div id="resource-cards" class="resource-cards"></div></section>
-    <nav class="main-tools" aria-label="游戏菜单"><button id="open-help" title="玩法说明">帮助</button><button id="open-settings">设置</button><button id="open-debug" class="debug-trigger">Debug</button></nav>
-  </header>
+
   <section id="load-error" class="error" role="alert" hidden><strong>记录暂时无法读取，原存档仍保留。</strong><p id="load-error-text"></p><button id="export-original">下载原记录</button><button id="backup-restart">备份后新开局</button></section>
   <div id="pause-banner" class="pause-banner" hidden><div><strong>小镇已暂停</strong><span>施工、生产和搬迁都在等待你继续。</span></div><button id="resume-town" class="primary">继续小镇</button></div>
 
   <div class="play-layout">
     <section class="landscape" aria-label="持久建筑群">
-      <div class="scene-toolbar"><div><span class="status-dot" aria-hidden="true"></span><strong id="scene-name">我的小镇</strong></div><div class="views" id="views" role="group" aria-label="查看建筑群与楼层"></div></div>
+      <div class="scene-toolbar"><div><span class="status-dot" aria-hidden="true"></span><strong id="scene-name">我的小镇</strong></div><div class="views" id="views" role="group" aria-label="查看建筑群与楼层"></div><nav class="main-tools" aria-label="游戏菜单"><button id="open-help" title="玩法说明">帮助</button><button id="open-settings">设置</button><button id="open-debug" class="debug-trigger">Debug</button></nav></div>
+      <div class="scene-hud"><section class="resource-strip" aria-label="可用材料，点击查看仓库"><div id="resource-cards" class="resource-cards"></div></section><div class="scene-controls" aria-label="施工控制"><button id="pause" class="play-button">暂停小镇</button><label title="施工速度"><span class="sr-only">施工速度</span><select id="speed"><option value="1">施工 ×1</option><option value="2">施工 ×2</option></select></label><label title="取材优先"><span class="sr-only">取材优先</span><select id="priority"><option value="auto">取材：自动</option><option value="W">优先木材</option><option value="S">优先石材</option></select></label></div></div><span id="debug-badge" class="debug-badge" hidden></span>
       <div class="world"><canvas id="town-scene" width="960" height="528" aria-label="正面剖面小镇；宠物逐格施工、搬迁和生产"></canvas></div>
       <div class="scene-caption"><span class="caption-label">小镇动态</span><span id="message" role="status">先建一间小屋，让来访的小伙伴安家。</span></div>
 
@@ -49,7 +46,7 @@
       <section id="panel-rooms" class="tab-panel" role="tabpanel" aria-labelledby="tab-rooms" hidden><h3>住处与工作空间</h3><p class="panel-intro">改建只调整需要变化的部分，保留原有结构。</p><div id="rooms"></div></section>
     </aside>
   </div>
-      <div class="time-controls"><button id="pause" class="play-button">暂停小镇</button><label>施工速度 <select id="speed"><option value="1">正常 ×1</option><option value="2">双倍 ×2</option></select></label><label>取材优先 <select id="priority"><option value="auto">自动安排</option><option value="W">木材</option><option value="S">石材</option></select></label><span class="control-hint">自动取材 · 持续生长</span><div class="town-clock"><span id="town-time"></span><span id="debug-badge" class="debug-badge" hidden></span><span id="save-status">本地自动保存</span></div></div>
+
 <div id="toast" class="toast" role="status" hidden></div>
 <dialog id="project-dialog" aria-labelledby="preview-title">
   <div class="dialog-heading"><span class="eyebrow">工程图纸</span><button data-close="project-dialog" aria-label="关闭工程图纸">✕</button></div>
@@ -66,7 +63,7 @@
   <div class="help-grid"><p><strong>居民</strong>查看到访、工作和住处，空闲时安排床位。</p><p><strong>仓库</strong>查看缺料和来源，转存材料腾出仓位。</p><p><strong>房间</strong>查看空间是否可用，切换楼层近看。</p><p><strong>暂停与保存</strong>刷新后暂停。关闭页面期间不计算收益。</p></div><p class="dialog-note">菜单打开时小镇仍会运行；需要停下来时，先点击「暂停小镇」。</p><div class="dialog-actions"><button class="primary" data-close="help-dialog">明白了，去建小镇</button></div>
 </dialog>
 <dialog id="settings-dialog" aria-labelledby="settings-title">
-  <div class="dialog-heading"><span class="eyebrow">游戏设置</span><button data-close="settings-dialog" aria-label="关闭设置与存档">✕</button></div><h2 id="settings-title">设置与存档</h2>
+  <div class="dialog-heading"><span class="eyebrow">游戏设置</span><button data-close="settings-dialog" aria-label="关闭设置与存档">✕</button></div><h2 id="settings-title">设置与存档</h2><p id="town-name">林边生长记</p><div class="settings-status-line"><span id="town-time"></span><span id="save-status">本地自动保存</span></div>
   <section class="dialog-section"><h3>进度保存在这个浏览器</h3><p>小镇自动保存，刷新后暂停。导出文件可以留一份备份；旧版建造使用另一份独立记录。</p><div class="tool-row"><button id="export-save">导出进度</button><button id="import-save">导入进度</button><input id="import-file" type="file" accept=".json,application/json" hidden></div><p id="settings-status" role="status"></p></section>
   <section class="dialog-section"><h3>旧版建造</h3><p><a href="./legacy.html">进入旧版建造 ↗</a></p></section>
   <section class="dialog-section"><h3>重新开始</h3><p>先在本地备份当前记录，再建立新小镇。旧版进度保持不变。</p><button id="new-game" class="danger-button">备份并重新开始</button></section>

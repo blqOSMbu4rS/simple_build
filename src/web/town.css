@@ -10,7 +10,7 @@ dialog{width:min(660px,calc(100% - 28px));max-height:90dvh;border:1px solid #aab
 html,body{width:100%;height:100%;overflow:hidden}
 body{display:grid;place-items:center;background:radial-gradient(ellipse at center,#35413a,#171f1e 75%)}
 .game-viewport{position:relative;width:1280px;height:720px;flex:none}
-.shell{position:absolute;inset:0 auto auto 0;width:1280px;height:720px;max-width:none;margin:0;padding:12px;display:grid;grid-template-rows:76px minmax(0,1fr) 54px;gap:10px;overflow:hidden;transform:scale(var(--game-scale));transform-origin:top left;border:3px solid #8b8060;border-radius:8px;background:#2c3b33;box-shadow:inset 0 0 0 2px #17241f,0 22px 70px #0006}
+.shell{position:absolute;inset:0 auto auto 0;width:1280px;height:720px;max-width:none;margin:0;padding:12px;display:grid;grid-template-rows:minmax(0,1fr);gap:10px;overflow:hidden;transform:scale(var(--game-scale));transform-origin:top left;border:3px solid #8b8060;border-radius:8px;background:#2c3b33;box-shadow:inset 0 0 0 2px #17241f,0 22px 70px #0006}
 button,select,input{border-radius:4px;min-height:34px}
 button{box-shadow:inset 0 1px #fff5,0 2px #2d33211c;transition:background .12s,border-color .12s;padding:7px 11px}
 .primary{background:linear-gradient(#567256,#3c573f);border-color:#304431;color:#fff2ce;box-shadow:inset 0 1px #a7b68066,0 3px #283a2e}
@@ -42,3 +42,20 @@ button{box-shadow:inset 0 1px #fff5,0 2px #2d33211c;transition:background .12s,b
 dialog{position:fixed;inset:50% auto auto 50%;width:640px;max-width:none;max-height:640px;margin:0;padding:20px 24px;overflow:auto;transform:translate(-50%,-50%) scale(var(--game-scale));border:3px solid #ad9c72;border-radius:5px;background:var(--paper);box-shadow:inset 0 0 0 1px #faf2d5,0 12px 60px #101e1977;scrollbar-width:thin;scrollbar-color:#b5a47e #e7ddc4}
 dialog::backdrop{background:transparent;backdrop-filter:none}dialog h2{font-size:22px;color:#40533c}.dialog-heading{margin-bottom:5px}.dialog-heading button{min-height:30px}.dialog-section{padding:12px 0;margin-top:10px}.dialog-actions{position:sticky;bottom:-20px;padding:12px 0;margin-top:10px;background:var(--paper);border-top:1px solid var(--line)}.preview-materials{margin:12px 0 8px}.preview-material{border-radius:3px;padding:10px}.impact{border-radius:3px;margin:9px 0;background:#dce0c3}.guide li{padding-top:10px;padding-bottom:10px}.help-grid{margin:12px 0}.debug-dialog{border-top:4px solid #b68b4c}.debug-notice{border-radius:3px}.debug-state{border-radius:3px}.debug-result{border:1px solid #c2bd94;border-radius:3px;bottom:-20px;margin-top:10px;background:#e0e4c9}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto;transition:none!important}}
+
+/* Scene-owned HUD: no page header or footer consumes the game surface. */
+.landscape{position:relative;display:block}
+.world{position:absolute;inset:0;display:flex;align-items:flex-end}
+.world canvas{width:100%;height:auto;aspect-ratio:480/264;flex:none}
+.scene-toolbar{position:absolute;z-index:1;top:12px;left:12px;right:12px;padding:0;border:0;background:transparent;gap:10px}
+.scene-toolbar>div:first-child{margin-right:auto}.scene-toolbar strong{font-size:11px}
+.scene-hud{position:absolute;z-index:1;top:54px;left:12px;right:12px;display:flex;align-items:center;gap:18px}
+.scene-hud .resource-cards{gap:5px}.scene-hud .resource-card{display:flex;align-items:center;gap:6px;min-height:34px;padding:6px 9px;background:#21372de6}
+.scene-hud .resource-card b{font-size:16px;margin-left:auto}.scene-hud .resource-symbol{font-size:15px}.scene-hud .resource-card small{display:none}
+.scene-controls{display:flex;align-items:center;gap:5px;flex:none}.scene-controls label{display:flex}.scene-controls button,.scene-controls select{font-size:11px;min-height:32px;height:32px;padding:4px 7px;background:#2c4839e6;color:#e8dbb2;border-color:#778564}
+.scene-controls .play-button{min-width:76px}.scene-controls select{max-width:104px}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.scene-caption{position:absolute;z-index:1;left:12px;right:12px;bottom:12px;min-height:28px;padding:5px 9px;border:0;border-radius:3px;background:#233a2bc9}
+.landscape>.debug-badge{position:absolute;z-index:1;top:98px;right:12px}
+.pause-banner{top:116px}.toast{bottom:60px}
+.settings-status-line{display:flex;justify-content:space-between;gap:16px;font-size:11px;color:var(--muted);margin-top:8px}
