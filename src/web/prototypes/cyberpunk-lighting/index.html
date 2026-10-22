@@ -1855,7 +1855,7 @@ function intensity(l,t){
 function runtimeLight(t=lightTime){
  const started=performance.now();
  pc.globalCompositeOperation=&#x27;source-over&#x27;;pc.globalAlpha=1;pc.drawImage(baseCanvas,0,0);
- pc.fillStyle=lighting.ambient?&#x27;rgba(5,10,18,.13)&#x27;:&#x27;rgba(3,7,15,.82)&#x27;;pc.fillRect(0,0,pixelCanvas.width,pixelCanvas.height);
+ pc.fillStyle=lighting.ambient?&#x27;rgba(5,10,18,.13)&#x27;:&#x27;rgba(3,7,15,.64)&#x27;;pc.fillRect(0,0,pixelCanvas.width,pixelCanvas.height);
  if(lighting.enabled){
   pc.save();pc.scale(1/pixelSize,1/pixelSize);pc.globalCompositeOperation=&#x27;screen&#x27;;
   for(const l of lights){
