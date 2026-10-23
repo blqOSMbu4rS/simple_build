@@ -1795,9 +1795,10 @@ html&gt;body{padding:0}&lt;/style&gt;
     &lt;button type=&quot;button&quot; class=&quot;btn&quot; data-action=&quot;lights-pause&quot; aria-pressed=&quot;true&quot;&gt;灯光动画［开启］&lt;/button&gt;
     &lt;button type=&quot;button&quot; class=&quot;btn&quot; data-action=&quot;lights-power&quot; aria-pressed=&quot;true&quot;&gt;环境光［开启］&lt;/button&gt;
     &lt;button type=&quot;button&quot; class=&quot;btn&quot; data-action=&quot;shadows&quot; aria-pressed=&quot;true&quot;&gt;阴影［开启］&lt;/button&gt;
+    &lt;button type=&quot;button&quot; class=&quot;btn&quot; data-action=&quot;items-motion&quot; aria-pressed=&quot;true&quot;&gt;物品动态［开启］&lt;/button&gt;
     &lt;button type=&quot;button&quot; class=&quot;btn&quot; data-action=&quot;scale-reference&quot; aria-pressed=&quot;false&quot;&gt;人物参照［关闭］&lt;/button&gt;
   &lt;/div&gt;
-  &lt;canvas role=&quot;img&quot; aria-label=&quot;随机生成的赛博朋克像素街区：暖色店面、冷色巷道、退台、连廊、屋顶花园与生活细节。可独立开关灯光动画、环境光和阴影，切换全景和近景并拖动查看。&quot;&gt;&lt;/canvas&gt;
+  &lt;canvas role=&quot;img&quot; aria-label=&quot;随机生成的赛博朋克像素街区：暖色店面、冷色巷道、退台、连廊、屋顶花园与生活细节。可独立开关物品动态、灯光动画、环境光和阴影，切换全景和近景并拖动查看。&quot;&gt;&lt;/canvas&gt;
   &lt;div class=&quot;text-small text-muted&quot; aria-live=&quot;polite&quot; data-status&gt;正在载入街区&lt;/div&gt;
   &lt;div role=&quot;alert&quot; hidden&gt;&lt;/div&gt;
 &lt;/div&gt;
@@ -1826,6 +1827,8 @@ const ROOM_LIGHTS={home:[&#x27;pendant&#x27;,&#x27;globe&#x27;],noodle:[&#x27;do
  tailor:[&#x27;task&#x27;,&#x27;pendant&#x27;],clinic:[&#x27;tube&#x27;],laundry:[&#x27;tube&#x27;,&#x27;dome&#x27;],market:[&#x27;dome&#x27;,&#x27;pendant&#x27;],repair:[&#x27;task&#x27;,&#x27;tube&#x27;]};
 let showScale=false;
 const placedProps=[],fixtures=[];
+const itemEffects=[],detailItems=[];
+let itemTime=0,itemFrameKey=&#x27;&#x27;;
 // Keep the scene on one raster path when snapshots/readbacks are requested.
 const c=scene.getContext(&#x27;2d&#x27;,{willReadFrequently:true});c.imageSmoothingEnabled=false;
 // Static material drawing and runtime light rendering share a two-world-pixel grid.
@@ -1834,6 +1837,9 @@ pixelCanvas.width=baseCanvas.width=W/pixelSize;pixelCanvas.height=baseCanvas.hei
 const pc=pixelCanvas.getContext(&#x27;2d&#x27;,{willReadFrequently:true}),bc=baseCanvas.getContext(&#x27;2d&#x27;);
 const dimCanvas=document.createElement(&#x27;canvas&#x27;);dimCanvas.width=pixelCanvas.width;dimCanvas.height=pixelCanvas.height;
 const dc=dimCanvas.getContext(&#x27;2d&#x27;);
+const itemCanvas=document.createElement(&#x27;canvas&#x27;);itemCanvas.width=pixelCanvas.width;itemCanvas.height=pixelCanvas.height;
+const ic=itemCanvas.getContext(&#x27;2d&#x27;,{willReadFrequently:true});ic.imageSmoothingEnabled=false;
+const dimAlpha=new Float32Array(pixelCanvas.width*pixelCanvas.height);
 pc.imageSmoothingEnabled=bc.imageSmoothingEnabled=false;
 const warmPixels=new Uint8Array(pixelCanvas.width*pixelCanvas.height);
 function prepareColorZones(){
@@ -1865,12 +1871,14 @@ function prepareDimBase(){
   const edge=b.levels[1].x+b.levels[1].w;
   const outer=Math.max(0,Math.min(1,(x-edge+20)/24,(1260-x)/32,(y-b.levels[1].base+24)/32,(832-y)/32));
   const alpha=warmPixels[p]?.60:.54-.10*Math.max(alley,outer);
+  dimAlpha[p]=alpha;
   d[i]=d[i]*(1-alpha)+3*alpha;d[i+1]=d[i+1]*(1-alpha)+7*alpha;d[i+2]=d[i+2]*(1-alpha)+15*alpha;
  }
  dc.putImageData(im,0,0);
 }
 let activeRoom=null,lightTime=0,renderedFrames=0,lastLightMs=0;
 const lighting={running:!matchMedia(&#x27;(prefers-reduced-motion: reduce)&#x27;).matches,enabled:true,ambient:true,shadows:true};
+const objectMotion={running:!matchMedia(&#x27;(prefers-reduced-motion: reduce)&#x27;).matches};
 function source(x,y,r,color,alpha,type=&#x27;bulb&#x27;,clip=activeRoom){
  lights.push({x,y,r,color,alpha,type,clip:clip?{...clip}:null,phase:rand(x*3+y*7)*Math.PI*2});
 }
@@ -1885,6 +1893,7 @@ function runtimeLight(t=lightTime){
  const started=performance.now();
  pc.globalCompositeOperation=&#x27;source-over&#x27;;pc.globalAlpha=1;pc.drawImage(lighting.ambient?baseCanvas:dimCanvas,0,0);
  if(lighting.ambient){pc.fillStyle=&#x27;rgba(5,10,18,.13)&#x27;;pc.fillRect(0,0,pixelCanvas.width,pixelCanvas.height);}
+ renderItems();pc.drawImage(itemCanvas,0,0);
  if(lighting.enabled){
   pc.save();pc.scale(1/pixelSize,1/pixelSize);pc.globalCompositeOperation=&#x27;screen&#x27;;
   for(const l of lights){
@@ -1914,21 +1923,96 @@ function lightControls(){
  pause.textContent=`灯光动画［${lighting.running?&#x27;开启&#x27;:&#x27;关闭&#x27;}］`;pause.setAttribute(&#x27;aria-pressed&#x27;,String(lighting.running));
  const shadows=root.querySelector(&#x27;[data-action=shadows]&#x27;);shadows.textContent=`阴影［${lighting.shadows?&#x27;开启&#x27;:&#x27;关闭&#x27;}］`;shadows.setAttribute(&#x27;aria-pressed&#x27;,String(lighting.shadows));
  power.textContent=`环境光［${lighting.ambient?&#x27;开启&#x27;:&#x27;关闭&#x27;}］`;power.setAttribute(&#x27;aria-pressed&#x27;,String(lighting.ambient));
+ const items=root.querySelector(&#x27;[data-action=items-motion]&#x27;);items.textContent=`物品动态［${objectMotion.running?&#x27;开启&#x27;:&#x27;关闭&#x27;}］`;items.setAttribute(&#x27;aria-pressed&#x27;,String(objectMotion.running));
 }
 function startLighting(){
  root.querySelector(&#x27;[data-action=shadows]&#x27;).addEventListener(&#x27;click&#x27;,()=&gt;{lighting.shadows=!lighting.shadows;runtimeLight();lightControls();paint();remember();});
  root.querySelector(&#x27;[data-action=lights-pause]&#x27;).addEventListener(&#x27;click&#x27;,()=&gt;{lighting.running=!lighting.running;lightControls();paint();remember();});
  root.querySelector(&#x27;[data-action=lights-power]&#x27;).addEventListener(&#x27;click&#x27;,()=&gt;{lighting.ambient=!lighting.ambient;runtimeLight();lightControls();paint();remember();});
+ root.querySelector(&#x27;[data-action=items-motion]&#x27;).addEventListener(&#x27;click&#x27;,()=&gt;{objectMotion.running=!objectMotion.running;lightControls();paint();remember();});
+ matchMedia(&#x27;(prefers-reduced-motion: reduce)&#x27;).addEventListener(&#x27;change&#x27;,e=&gt;{if(e.matches){lighting.running=false;objectMotion.running=false;lightControls();paint();}});
  let previous=0,visible=true;
  new IntersectionObserver(entries=&gt;{visible=entries[0].isIntersecting;}).observe(root);
  function tick(now){
   requestAnimationFrame(tick);
   if(!previous){previous=now;return;}
   const dt=now-previous;if(dt&lt;1000/24)return;previous=now;
-  if(!root.isConnected||!visible||document.hidden||!lighting.running||!lighting.enabled)return;
-  lightTime+=Math.min(dt/1000,.1);runtimeLight();paint();
+  if(!root.isConnected||!visible||document.hidden||(!lighting.running&amp;&amp;!objectMotion.running))return;
+  const elapsed=Math.min(dt/1000,.1);
+  if(lighting.running&amp;&amp;lighting.enabled)lightTime+=elapsed;
+  if(objectMotion.running)itemTime+=elapsed;
+  runtimeLight();paint();
  }
  lightControls();requestAnimationFrame(tick);
+}
+
+function addItemEffect(type,options){
+ const phase=rand(options.x*7+options.y*11+itemEffects.length*19)*Math.PI*2;
+ const effect={type,phase,clip:activeRoom?{...activeRoom}:null,...options};itemEffects.push(effect);return effect;
+}
+function itemPoly(points,color,alpha=1){
+ ic.globalAlpha=alpha;ic.fillStyle=color;ic.beginPath();points.forEach(([x,y],i)=&gt;i?ic.lineTo(Math.round(x/2)*2,Math.round(y/2)*2):ic.moveTo(Math.round(x/2)*2,Math.round(y/2)*2));ic.closePath();ic.fill();
+}
+function itemRect(x,y,w,h,color,alpha=1){ic.globalAlpha=alpha;ic.fillStyle=color;ic.fillRect(Math.round(x/2)*2,Math.round(y/2)*2,Math.max(2,Math.round(w/2)*2),Math.max(2,Math.round(h/2)*2));}
+function itemCircle(x,y,r,color,alpha=1){itemPoly(Array.from({length:12},(_,i)=&gt;[x+Math.cos(i*Math.PI/6)*r,y+Math.sin(i*Math.PI/6)*r]),color,alpha);}
+const ITEM_DRAW={
+ fan(o,t){
+  const a=t*.95+o.phase,r=o.r;
+  for(let k=0;k&lt;3;k++){const q=a+k*Math.PI*2/3;itemPoly([[o.x+Math.cos(q)*2,o.y+Math.sin(q)*2],[o.x+Math.cos(q-.4)*r,o.y+Math.sin(q-.4)*r],[o.x+Math.cos(q+.24)*r,o.y+Math.sin(q+.24)*r]],&#x27;#9fada7&#x27;);}
+  // The enclosing grille has a fixed silhouette, so its existing shadow remains valid.
+  for(const k of [-.55,0,.55]){itemRect(o.x-r,o.y+r*k,r*2,2,&#x27;#324a52&#x27;,.85);itemRect(o.x+r*k,o.y-r,2,r*2,&#x27;#324a52&#x27;,.6);}
+  itemCircle(o.x,o.y,3,&#x27;#b8aa83&#x27;);
+ },
+ steam(o,t){
+  const breeze=Math.sin(t*.52)*2;
+  for(let k=0;k&lt;3;k++){
+   const age=(t*.24+k*.31+o.phase/7)%1;if(age&gt;.83)continue;
+   const yy=o.y-age*o.rise,xx=o.x+breeze+Math.sin(age*5+o.phase+k)*age*5,opacity=(1-age)*.45;
+   itemRect(xx-2-age*2,yy,4+age*4,4+age*3,&#x27;#ccd1bd&#x27;,opacity);
+   itemRect(xx+2,yy-4,3+age*2,4,&#x27;#a9bfc0&#x27;,opacity*.65);
+  }
+ },
+ drum(o,t){
+  const elapsed=t+o.phase,cycle=elapsed%14,turn=(Math.floor(elapsed/14)*10+Math.min(cycle,10))*.8;
+  ic.beginPath();for(let k=0;k&lt;16;k++){const a=k*Math.PI/8,x=o.x+Math.cos(a)*o.r,y=o.y+Math.sin(a)*o.r;k?ic.lineTo(x,y):ic.moveTo(x,y);}ic.closePath();ic.clip();
+  itemCircle(o.x,o.y,o.r,&#x27;#1c3543&#x27;);
+  for(let k=0;k&lt;3;k++){const a=turn+k*2.1,itemX=o.x+Math.cos(a)*o.r*.5,itemY=o.y+Math.sin(a)*o.r*.5;itemPoly([[itemX-3,itemY-4],[itemX+4,itemY-2],[itemX+3,itemY+4],[itemX-4,itemY+2]],[&#x27;#a49a82&#x27;,&#x27;#738d9b&#x27;,&#x27;#9c7777&#x27;][k]);}
+  itemRect(o.x-o.r*.5,o.y-o.r*.6,3,4,&#x27;#94bec6&#x27;,.55);
+ },
+ cloth(o,t){
+  const sway=Math.round((Math.sin(t*.52)*1.8+Math.sin(t*.83+o.phase)*1.2)/2)*2,x=o.x,y=o.y,w=o.w,h=o.h;
+  if(o.shape===&#x27;curtain&#x27;){
+   itemPoly([[x,y],[x+w,y],[x+w+sway,y+h],[x+sway,y+h-2]],o.color,.86);
+   for(let k=3;k&lt;w;k+=5)itemPoly([[x+k,y],[x+k+2,y],[x+k+sway+2,y+h-3],[x+k+sway,y+h-3]],&#x27;#b8b0a0&#x27;,.35);
+  }else{
+   itemPoly([[x+w*.3,y],[x+w*.43,y+3],[x+w*.6,y],[x+w*.82,y+4],[x+w+2,y+h*.35],[x+w*.8+sway*.4,y+h*.45],[x+w*.77+sway,y+h],[x+w*.16+sway,y+h-1],[x+w*.14+sway*.4,y+h*.43],[x-3,y+h*.34],[x+w*.06,y+4]],o.color);
+   itemPoly([[x+w*.3,y+8],[x+w*.36,y+8],[x+w*.36+sway,y+h-4],[x+w*.3+sway,y+h-4]],&#x27;#c6b19a&#x27;,.3);
+  }
+ },
+ screen(o,t){
+  const phase=(t*.16+o.phase/7)%1;if(phase&gt;.75)return;
+  const yy=o.y+phase/.75*o.h;
+  itemRect(o.x,yy,o.w,2,&#x27;#78d7d9&#x27;,.45);
+  for(let k=0;k&lt;3;k++)itemRect(o.x+o.w-5,o.y+2+k*3,2+(Math.floor(t+k+o.phase)%2)*2,2,&#x27;#a2dfd1&#x27;,.4);
+ },
+ drip(o,t){
+  const phase=((t+o.phase)%3.8)/3.8;
+  if(phase&lt;.6){const u=phase/.6;itemRect(o.x,o.y+(o.impact-o.y)*u*u,2,4,&#x27;#85adb8&#x27;,.8);}
+  else{const age=(phase-.6)/.4,r=3+age*o.radius;ic.globalAlpha=(1-age)*.65;ic.strokeStyle=&#x27;#91bbc3&#x27;;ic.lineWidth=2;ic.beginPath();for(let k=0;k&lt;=12;k++){const a=k*Math.PI/6,x=o.x+Math.cos(a)*r,y=o.impact+Math.sin(a)*r*.2;k?ic.lineTo(Math.round(x/2)*2,Math.round(y/2)*2):ic.moveTo(Math.round(x/2)*2,Math.round(y/2)*2);}ic.stroke();}
+ }
+};
+function renderItems(){
+ const frame=Math.floor(itemTime*12),key=`${frame}:${lighting.ambient}`;if(key===itemFrameKey)return;itemFrameKey=key;
+ ic.setTransform(1,0,0,1,0,0);ic.clearRect(0,0,itemCanvas.width,itemCanvas.height);ic.save();ic.scale(1/pixelSize,1/pixelSize);
+ for(const o of itemEffects){
+  ic.save();if(o.clip){ic.beginPath();ic.rect(o.clip.x,o.clip.y,o.clip.w,o.clip.h);ic.clip();}
+  ITEM_DRAW[o.type](o,frame/12);ic.restore();
+ }
+ ic.restore();
+ // Moving material receives the same ambient tint and subsequent direct light as the static scene.
+ const im=ic.getImageData(0,0,itemCanvas.width,itemCanvas.height),d=im.data;
+ for(let i=0,p=0;i&lt;d.length;i+=4,p++)if(d[i+3]){const a=lighting.ambient?.13:dimAlpha[p];d[i]=d[i]*(1-a)+(lighting.ambient?5:3)*a;d[i+1]=d[i+1]*(1-a)+(lighting.ambient?10:7)*a;d[i+2]=d[i+2]*(1-a)+(lighting.ambient?18:15)*a;}
+ ic.putImageData(im,0,0);
 }
 
 const occluders=[],shapeCache=new Map();
@@ -2073,7 +2157,10 @@ function prop(k,x,base,w,h,flip=false){
  const metric=PROP_METRICS[k];if(metric){w=metric.w?metric.w*METRES:undefined;h=metric.h?metric.h*METRES:undefined;}
  const s=S[&#x27;shared/&#x27;+k],sc=Math.min(w?w/s.w:1,h?h/s.h:Infinity),b=sprite(&#x27;shared/&#x27;+k,x,base-Math.round(s.h*sc),w,h,flip);
  propBlocker(k,b,flip);placedProps.push({kind:k,...b});
- if(k===&#x27;monitor&#x27;)source(b.x+b.w*.5,b.y+b.h*.35,65,&#x27;75,204,245&#x27;,.46,&#x27;screen&#x27;);return b;
+ if(k===&#x27;monitor&#x27;){source(b.x+b.w*.5,b.y+b.h*.35,65,&#x27;75,204,245&#x27;,.46,&#x27;screen&#x27;);addItemEffect(&#x27;screen&#x27;,{x:b.x+b.w*.13,y:b.y+b.h*.12,w:b.w*.72,h:b.h*.43});}
+ if(k===&#x27;washer&#x27;)addItemEffect(&#x27;drum&#x27;,{x:b.x+b.w*.48,y:b.y+b.h*.57,r:b.w*.205});
+ if(k===&#x27;stock-pot&#x27;)addItemEffect(&#x27;steam&#x27;,{x:b.x+b.w*.5,y:b.y+3,rise:22});
+ return b;
 }
 function tile(f,kind,x,y,w){c.save();c.beginPath();c.rect(x,y,w,32);c.clip();for(let i=0;i&lt;w;i+=64)sprite(f+&#x27;/&#x27;+kind+&#x27;-&#x27;+(i===0?&#x27;left&#x27;:i+64&gt;=w?&#x27;right&#x27;:&#x27;middle&#x27;),x+i,y);c.restore();}
 function glow(x,y,r,color,alpha=.35){source(x,y,r,color,alpha,r&lt;=25?&#x27;beacon&#x27;:&#x27;bulb&#x27;);}
@@ -2143,7 +2230,7 @@ function fern(x,base,h=75){
 }
 function laundry(x,y,count=4){
  line([[x-5,y],[x+count*28+4,y+2]],&#x27;#283134&#x27;,2);
- for(let i=0;i&lt;count;i++){const xx=x+i*28,col=[&#x27;#9e4e60&#x27;,&#x27;#4d7b9d&#x27;,&#x27;#b89256&#x27;,&#x27;#7176a3&#x27;][i%4];poly([[xx+6,y+4],[xx+10,y+7],[xx+15,y+4],[xx+22,y+8],[xx+25,y+19],[xx+19,y+21],[xx+18,y+38],[xx+3,y+37],[xx+2,y+20],[xx-3,y+19],[xx,y+8]],col,&#x27;#27303d&#x27;,2);rect(xx+5,y+13,2,21,&#x27;rgba(240,207,172,.2)&#x27;);rect(xx+8,y-1,3,6,&#x27;#a5a48a&#x27;);}
+ for(let i=0;i&lt;count;i++){const xx=x+i*28,col=[&#x27;#9e4e60&#x27;,&#x27;#4d7b9d&#x27;,&#x27;#b89256&#x27;,&#x27;#7176a3&#x27;][i%4];addItemEffect(&#x27;cloth&#x27;,{x:xx,y:y+4,w:24,h:34,color:col,shape:&#x27;shirt&#x27;});rect(xx+8,y-1,3,6,&#x27;#a5a48a&#x27;);}
 }
 function canopy(x,y,w,col=&#x27;#415c6d&#x27;,drop=24){
  blockRect(x-10,y+drop,w+22,7,&#x27;floor&#x27;);
@@ -2193,7 +2280,45 @@ function roomDetails(x,y,w,h,kind){
    wallTools(x+28,y+62);poster(x+w-49,y+24,23,30,&#x27;FIX&#x27;,&#x27;#9e8e71&#x27;);box(x+27,base,31,23);box(x+31,base-23,22,13);
  }
 }
+// Dressing uses support/edge anchors, while movement is selected only by generic effect type.
+const ROOM_DRESSING={
+ home:[{type:&#x27;radio&#x27;,support:&#x27;cabinet-low&#x27;,dx:13,dy:-12},{type:&#x27;fan&#x27;,right:36,dy:83},{type:&#x27;curtains&#x27;,right:95,dy:37,w:65,h:32},{type:&#x27;shoes&#x27;,floor:true,dx:104,dy:-6}],
+ bunks:[{type:&#x27;fan&#x27;,dx:162,dy:30},{type:&#x27;paper&#x27;,support:&#x27;table-round&#x27;,dx:2,dy:-3}],
+ noodle:[{type:&#x27;hood&#x27;,support:&#x27;stock-pot&#x27;,index:2,dx:-18,dy:-35},{type:&#x27;condiments&#x27;,support:&#x27;counter-middle&#x27;,dx:68,dy:-12},{type:&#x27;dishes&#x27;,support:&#x27;counter-middle&#x27;,index:1,dx:68,dy:-3},{type:&#x27;extinguisher&#x27;,floor:true,right:90,dy:-31}],
+ tailor:[{type:&#x27;spools&#x27;,support:&#x27;table-work&#x27;,dx:70,dy:-10},{type:&#x27;paper&#x27;,support:&#x27;table-work&#x27;,dx:3,dy:-3}],
+ laundry:[{type:&#x27;detergent&#x27;,right:47,dy:92}],
+ clinic:[{type:&#x27;clipboard&#x27;,dx:117,dy:77},{type:&#x27;medicine&#x27;,support:&#x27;table-work&#x27;,dx:40,dy:-8}],
+ repair:[{type:&#x27;parts&#x27;,support:&#x27;table-work&#x27;,dx:3,dy:-10},{type:&#x27;meter&#x27;,right:32,dy:69}],
+ market:[{type:&#x27;price&#x27;,support:&#x27;produce-crate&#x27;,dx:31,dy:-7},{type:&#x27;paper&#x27;,support:&#x27;cabinet-low&#x27;,index:1,dx:53,dy:-3}]
+};
+const DETAIL_DRAW={
+ radio(x,y){blockRect(x,y,23,14);rect(x,y,23,14,&#x27;#2c3d43&#x27;);rect(x+2,y+2,19,10,&#x27;#8b7862&#x27;);for(let yy=3;yy&lt;11;yy+=3)for(let xx=3;xx&lt;12;xx+=3)rect(x+xx,y+yy,2,2,&#x27;#34464a&#x27;);rect(x+15,y+3,5,3,&#x27;#bfae82&#x27;);rect(x+16,y+9,3,3,&#x27;#b5b3a0&#x27;);line([[x+18,y],[x+23,y-12]],&#x27;#8c9a95&#x27;,2);},
+ fan(x,y){const r=14;blocker(Array.from({length:8},(_,i)=&gt;[x+Math.cos(i*Math.PI/4)*(r+2),y+Math.sin(i*Math.PI/4)*(r+2)]));rect(x-3,y+13,6,10,&#x27;#344a52&#x27;);poly(Array.from({length:12},(_,i)=&gt;[x+Math.cos(i*Math.PI/6)*(r+2),y+Math.sin(i*Math.PI/6)*(r+2)]),&#x27;#344b53&#x27;,&#x27;#9ba39a&#x27;,2);addItemEffect(&#x27;fan&#x27;,{x,y,r:12});},
+ curtains(x,y,o){line([[x-4,y-3],[x+o.w+4,y-3]],&#x27;#b7ac92&#x27;,2);for(const xx of [x,x+o.w-10]){for(let i=0;i&lt;10;i+=4)rect(xx+i,y-4,2,5,&#x27;#566775&#x27;);addItemEffect(&#x27;cloth&#x27;,{x:xx,y,w:10,h:o.h+2,color:&#x27;#7b8d9a&#x27;,shape:&#x27;curtain&#x27;});}},
+ shoes(x,y){for(const dx of [0,12]){rect(x+dx,y,7,4,&#x27;#8d7462&#x27;);rect(x+dx-2,y+3,11,3,&#x27;#354750&#x27;);rect(x+dx+1,y,4,2,&#x27;#c2b397&#x27;);}},
+ hood(x,y){blockRect(x+24,y-22,14,22);rect(x+24,y-22,14,22,&#x27;#5c7379&#x27;);rect(x+25,y-22,3,22,&#x27;#91a2a0&#x27;);blocker([[x+5,y],[x+58,y],[x+69,y+16],[x-5,y+16]]);poly([[x+5,y],[x+58,y],[x+69,y+16],[x-5,y+16]],&#x27;#6b7d7c&#x27;,&#x27;#263d49&#x27;,2);rect(x-5,y+16,74,4,&#x27;#a9ab98&#x27;);rect(x+24,y+2,16,13,&#x27;#283f49&#x27;);addItemEffect(&#x27;fan&#x27;,{x:x+32,y:y+8,r:6});},
+ condiments(x,y){for(let i=0;i&lt;3;i++){const xx=x+i*6,hh=10+i%2*3;rect(xx,y+14-hh,5,hh,[&#x27;#a4754e&#x27;,&#x27;#8d5c4e&#x27;,&#x27;#7e8e64&#x27;][i]);rect(xx+1,y+12-hh,3,3,&#x27;#bfb393&#x27;);rect(xx,y+7,5,3,&#x27;#d0ba8d&#x27;);}},
+ dishes(x,y){for(let i=0;i&lt;3;i++){rect(x+i,y-i*2,19-i*2,3,&#x27;#a1b4af&#x27;);rect(x+i+1,y-i*2,17-i*2,1,&#x27;#d1cdb2&#x27;);}},
+ extinguisher(x,y){blockRect(x,y,11,29);rect(x+1,y+5,9,24,&#x27;#955c53&#x27;);rect(x+3,y+2,5,4,&#x27;#a6aaa0&#x27;);rect(x,y,11,3,&#x27;#344d58&#x27;);line([[x+8,y+2],[x+14,y+6],[x+14,y+19]],&#x27;#263c47&#x27;,2);rect(x+2,y+14,7,7,&#x27;#c4c3a4&#x27;);},
+ spools(x,y){for(let i=0;i&lt;3;i++){const xx=x+i*5;rect(xx,y,4,10,[&#x27;#b68b79&#x27;,&#x27;#8aa7a7&#x27;,&#x27;#c1b487&#x27;][i]);rect(xx-1,y,6,2,&#x27;#b8a281&#x27;);rect(xx-1,y+9,6,2,&#x27;#6e786c&#x27;);}},
+ paper(x,y){rect(x,y,14,5,&#x27;#c2b99a&#x27;);rect(x+3,y+2,8,1,&#x27;#647d80&#x27;);rect(x+15,y-2,2,7,&#x27;#8b6d5b&#x27;);},
+ detergent(x,y){rect(x-2,y+23,25,3,&#x27;#708a8b&#x27;);for(let i=0;i&lt;2;i++){rect(x+i*12,y+3+i*3,9,20-i*3,[&#x27;#7e9d9e&#x27;,&#x27;#aa9581&#x27;][i]);rect(x+i*12+3,y+i*3,4,4,&#x27;#b2b2a2&#x27;);rect(x+i*12+1,y+12,7,5,&#x27;#c1c1a6&#x27;);}},
+ clipboard(x,y){rect(x,y,17,23,&#x27;#756f5c&#x27;);rect(x+2,y+2,13,19,&#x27;#b5bca7&#x27;);rect(x+5,y-2,7,4,&#x27;#647f86&#x27;);for(let j=0;j&lt;4;j++)rect(x+4,y+6+j*3,8-j%2*3,1,&#x27;#708c8b&#x27;);},
+ medicine(x,y){rect(x,y+2,6,9,&#x27;#8eaaa5&#x27;);rect(x+1,y,4,3,&#x27;#c6c4ad&#x27;);rect(x+1,y+5,4,3,&#x27;#bac4b1&#x27;);},
+ parts(x,y){blockRect(x,y,24,12);rect(x,y,24,12,&#x27;#415c67&#x27;);rect(x+2,y+2,20,8,&#x27;#7a8d8d&#x27;);for(let k=0;k&lt;4;k++)rect(x+3+k*4,y+4+k%2*2,3,3,[&#x27;#b4ac91&#x27;,&#x27;#506c73&#x27;][k%2]);rect(x+9,y+9,7,2,&#x27;#c0b998&#x27;);},
+ meter(x,y){rect(x,y,16,23,&#x27;#9e8a64&#x27;);rect(x+3,y+3,10,6,&#x27;#506f74&#x27;);rect(x+6,y+12,5,5,&#x27;#273d47&#x27;);line([[x+5,y+20],[x+3,y+31],[x+11,y+31],[x+13,y+22]],&#x27;#916c5e&#x27;,2);},
+ price(x,y){rect(x+6,y+7,2,12,&#x27;#718578&#x27;);rect(x,y,15,10,&#x27;#b7ab86&#x27;);rect(x+3,y+3,8,2,&#x27;#4a6a70&#x27;);rect(x+6,y+6,5,1,&#x27;#4a6a70&#x27;);}
+};
+function dressRoom(x,y,w,h,kind,props){
+ for(const o of ROOM_DRESSING[kind]||[]){
+  const support=o.support?props.filter(p=&gt;p.kind===o.support)[o.index||0]:null;if(o.support&amp;&amp;!support)continue;
+  const px=support?support.x+(o.dx||0):o.right!==undefined?x+w-o.right:x+(o.dx||0);
+  const py=(support?support.top:o.floor?y+h-3:y)+(o.dy||0);
+  DETAIL_DRAW[o.type](px,py,o);detailItems.push({type:o.type,x:px,y:py,room:{...activeRoom}});
+ }
+}
 function room(x,y,w,h,kind,cold=false){
+ const propsStart=placedProps.length;
  activeRoom={x:x+10,y:y+9,w:w-20,h:h-9};
  wall(x,y,w,h,&#x27;concrete&#x27;,cold?&#x27;#6b9eac&#x27;:&#x27;#d8b37c&#x27;);
  // Light is bounded by each room, with falloff into its corners.
@@ -2225,7 +2350,7 @@ function room(x,y,w,h,kind,cold=false){
    shelves(px,y+25,71,1);const b=prop(&#x27;table-work&#x27;,px,base,86);prop(&#x27;monitor&#x27;,b.x+42,b.top+2,36);prop(&#x27;chair&#x27;,px+39,base,25,49);
  }
  const styles=ROOM_LIGHTS[kind]||[&#x27;pendant&#x27;];
- roomDetails(x,y,w,h,kind);lamp(lx,y+6,cold,styles[Math.floor(rand(x+y)*styles.length)]);
+ roomDetails(x,y,w,h,kind);dressRoom(x,y,w,h,kind,placedProps.slice(propsStart));lamp(lx,y+6,cold,styles[Math.floor(rand(x+y)*styles.length)]);
  // A second small wall light fills the opposite side of each room.
  lamp(x+39,y+14,cold,&#x27;bulkhead&#x27;,.32,Math.max(125,w*.48));
  c.restore();activeRoom=null;trim(x,y,w,h);floor(x-4,y+h,w+8);
@@ -2433,8 +2558,19 @@ function paintScaleReferences(){
  v.restore();
 }
 
+function streetLife(){
+ const [a,b]=layout.towers,left=a.levels[0].x,right=b.levels[0].x;
+ for(const x of [left-48,right-17]){
+  blockRect(x-2,721,6,67);line([[x,721],[x,782],[x+7,782],[x+7,790]],&#x27;#203844&#x27;,6);line([[x-1,721],[x-1,782],[x+6,782]],&#x27;#829797&#x27;,2);
+  for(const y of [735,767])rect(x-5,y,10,4,&#x27;#586e72&#x27;);
+  poly([[x-19,825],[x-9,820],[x+21,821],[x+29,827],[x+12,831],[x-14,830]],&#x27;#274753&#x27;,&#x27;#456778&#x27;,2);
+  rect(x-12,834,38,5,&#x27;#142f3e&#x27;);for(let j=0;j&lt;7;j++)rect(x-10+j*5,834,2,5,&#x27;#7a9499&#x27;);
+  addItemEffect(&#x27;drip&#x27;,{x:x+7,y:791,impact:825,radius:20});detailItems.push({type:&#x27;drain-pipe&#x27;,x,y:721});
+  rect(x+14,800,12,5,&#x27;#9c987e&#x27;);rect(x+17,800,5,2,&#x27;#647d83&#x27;);
+ }
+}
 function compose(){
- count=0;lights=[];signs=[];occluders.length=0;placedProps.length=0;fixtures.length=0;activeRoom=null;skyline();
+ count=0;lights=[];signs=[];occluders.length=0;placedProps.length=0;fixtures.length=0;itemEffects.length=0;detailItems.length=0;itemFrameKey=&#x27;&#x27;;itemTime=0;activeRoom=null;skyline();
  generateBlock();
  // Wet paving takes reflected light from the same scene, broken into pixel ripples.
  rect(0,812,W,128,&#x27;#172b3d&#x27;);
@@ -2445,17 +2581,17 @@ function compose(){
  for(let i=0;i&lt;100;i++){const x=rand(i+22)*W,y=793+rand(i+4)*15;rect(x,y,3+rand(i)*19,2,i%3?&#x27;#9b8261&#x27;:&#x27;#c08b94&#x27;);}
  // Street lamps and their local pools of light.
  for(const x of [64,1230]){rect(x,684,5,110,&#x27;#111f2c&#x27;);rect(x-5,789,15,6,&#x27;#1c2c36&#x27;);line([[x+2,685],[x+2,673],[x+18,673]],&#x27;#1b2a36&#x27;,4);rect(x+10,675,18,22,&#x27;#182b36&#x27;);rect(x+13,677,12,15,&#x27;#ffd486&#x27;);glow(x+20,687,63,&#x27;255,181,70&#x27;,.4);}
- prepareShadows();pixelFinish();
+ streetLife();prepareShadows();pixelFinish();
 }
 try{compose();}catch(e){const el=root.querySelector(&#x27;[role=alert]&#x27;);el.hidden=false;el.textContent=e.stack;throw e;}
-function paint(){const width=Math.max(280,canvas.clientWidth),height=width/1.36,dpr=Math.min(2,devicePixelRatio||1);if(canvas.width!==Math.round(width*dpr)||canvas.height!==Math.round(height*dpr)){canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);}v.setTransform(dpr,0,0,dpr,0,0);v.imageSmoothingEnabled=false;const s=width/W*state.zoom;v.fillStyle=&#x27;#172b3d&#x27;;v.fillRect(0,0,width,height);v.drawImage(scene,width/2-state.x*s,height/2-state.y*s,W*s,H*s);if(showScale){v.save();v.translate(width/2-state.x*s,height/2-state.y*s);v.scale(s,s);paintScaleReferences();v.restore();}root.dataset.ready=&#x27;true&#x27;;root.dataset.seed=String(seed);const status=`种子 ${seed} · ${lighting.shadows?&#x27;实时阴影&#x27;:&#x27;阴影关闭&#x27;} · ${lighting.running?&#x27;灯光动画开启&#x27;:&#x27;灯光动画关闭&#x27;} · ${lighting.ambient?&#x27;环境光开启&#x27;:&#x27;环境光关闭&#x27;} · 可拖动查看`;if(root.querySelector(&#x27;[data-status]&#x27;).textContent!==status)root.querySelector(&#x27;[data-status]&#x27;).textContent=status;for(const b of root.querySelectorAll(&#x27;[data-view]&#x27;))b.setAttribute(&#x27;aria-pressed&#x27;,String(b.dataset.view===state.view));}
+function paint(){const width=Math.max(280,canvas.clientWidth),height=width/1.36,dpr=Math.min(2,devicePixelRatio||1);if(canvas.width!==Math.round(width*dpr)||canvas.height!==Math.round(height*dpr)){canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);}v.setTransform(dpr,0,0,dpr,0,0);v.imageSmoothingEnabled=false;const s=width/W*state.zoom;v.fillStyle=&#x27;#172b3d&#x27;;v.fillRect(0,0,width,height);v.drawImage(scene,width/2-state.x*s,height/2-state.y*s,W*s,H*s);if(showScale){v.save();v.translate(width/2-state.x*s,height/2-state.y*s);v.scale(s,s);paintScaleReferences();v.restore();}root.dataset.ready=&#x27;true&#x27;;root.dataset.seed=String(seed);const status=`种子 ${seed} · ${lighting.shadows?&#x27;实时阴影&#x27;:&#x27;阴影关闭&#x27;} · ${lighting.running?&#x27;灯光动画开启&#x27;:&#x27;灯光动画关闭&#x27;} · ${lighting.ambient?&#x27;环境光开启&#x27;:&#x27;环境光关闭&#x27;} · ${objectMotion.running?&#x27;物品动态开启&#x27;:&#x27;物品动态关闭&#x27;} · 可拖动查看`;if(root.querySelector(&#x27;[data-status]&#x27;).textContent!==status)root.querySelector(&#x27;[data-status]&#x27;).textContent=status;for(const b of root.querySelectorAll(&#x27;[data-view]&#x27;))b.setAttribute(&#x27;aria-pressed&#x27;,String(b.dataset.view===state.view));}
 root.querySelector(&#x27;[data-action=scale-reference]&#x27;).addEventListener(&#x27;click&#x27;,e=&gt;{showScale=!showScale;e.currentTarget.textContent=`人物参照［${showScale?&#x27;开启&#x27;:&#x27;关闭&#x27;}］`;e.currentTarget.setAttribute(&#x27;aria-pressed&#x27;,String(showScale));paint();});
-function remember(){window.openai?.setWidgetState?.({modelContent:{study:&#x27;standalone-shadow-lighting&#x27;,seed,view:state.view},privateContent:{camera:{...state},lighting:{...lighting}}})?.catch(()=&gt;{});}
+function remember(){window.openai?.setWidgetState?.({modelContent:{study:&#x27;standalone-shadow-lighting&#x27;,seed,view:state.view},privateContent:{camera:{...state},lighting:{...lighting},items:{...objectMotion,time:itemTime}}})?.catch(()=&gt;{});}
 root.querySelector(&#x27;[data-action=generate]&#x27;).addEventListener(&#x27;click&#x27;,()=&gt;{seed=(Math.imul(seed,1664525)+1013904223)&gt;&gt;&gt;0;compose();paint();remember();});
 root.querySelectorAll(&#x27;[data-view]&#x27;).forEach(b=&gt;b.addEventListener(&#x27;click&#x27;,()=&gt;{state=b.dataset.view===&#x27;street&#x27;?{view:&#x27;street&#x27;,x:650,y:661,zoom:1.75}:b.dataset.view===&#x27;roof&#x27;?{view:&#x27;roof&#x27;,x:650,y:279,zoom:1.7}:{view:&#x27;all&#x27;,x:640,y:470,zoom:1};paint();remember();}));
 let drag=null;canvas.addEventListener(&#x27;pointerdown&#x27;,e=&gt;{drag={x:e.clientX,y:e.clientY,cx:state.x,cy:state.y};canvas.setPointerCapture(e.pointerId);});canvas.addEventListener(&#x27;pointermove&#x27;,e=&gt;{if(!drag)return;const s=canvas.clientWidth/W*state.zoom;state.x=Math.max(W/(2*state.zoom),Math.min(W-W/(2*state.zoom),drag.cx-(e.clientX-drag.x)/s));state.y=Math.max(H/(2*state.zoom),Math.min(H-H/(2*state.zoom),drag.cy-(e.clientY-drag.y)/s));paint();});for(const k of [&#x27;pointerup&#x27;,&#x27;pointercancel&#x27;])canvas.addEventListener(k,()=&gt;{if(drag){drag=null;remember();}});
-window.addEventListener(&#x27;openai:set_globals&#x27;,e=&gt;{const s=e.detail?.globals?.widgetState;if(!s)return;if(Number.isInteger(s.modelContent?.seed)&amp;&amp;seed!==(s.modelContent.seed&gt;&gt;&gt;0)){seed=s.modelContent.seed&gt;&gt;&gt;0;compose();}if(s.privateContent?.camera)Object.assign(state,s.privateContent.camera);if(s.privateContent?.lighting){Object.assign(lighting,s.privateContent.lighting);runtimeLight();lightControls();}paint();});
-new ResizeObserver(paint).observe(canvas);paint();startLighting();window.BLOCK_STUDY={capture:()=&gt;scene.toDataURL(&#x27;image/png&#x27;),state:()=&gt;({...state,seed,showScale,lighting:{...lighting},time:lightTime,frames:renderedFrames}),at:t=&gt;{lightTime=t;runtimeLight(t);paint();},pause:()=&gt;{lighting.running=false;lightControls();},shadowKinds:kinds=&gt;{shadowFilter=kinds?new Set(kinds):null;runtimeLight();paint();},generate:s=&gt;{seed=s&gt;&gt;&gt;0;compose();paint();},plan:makeLayout,validate:validateLayout,get stats(){return{scale:{pixelsPerMetre:METRES,adultHeight:ADULT_HEIGHT,railHeight:RAIL_HEIGHT},props:placedProps,fixtures:fixtures.map(f=&gt;({...f})),references:scaleReferences(),sprites:count,lights:lights.length,width:W,height:H,seed,signs,layout,lightMs:lastLightMs,lightTypes:lights.map(l=&gt;l.type),occluders:occluders.reduce((a,o)=&gt;(a[o.type]=(a[o.type]||0)+1,a),{}),shadowFaces:lights.reduce((n,l)=&gt;n+shadowQuads(l,l.x,l.y).length,0)};}};
+window.addEventListener(&#x27;openai:set_globals&#x27;,e=&gt;{const s=e.detail?.globals?.widgetState;if(!s)return;if(Number.isInteger(s.modelContent?.seed)&amp;&amp;seed!==(s.modelContent.seed&gt;&gt;&gt;0)){seed=s.modelContent.seed&gt;&gt;&gt;0;compose();}if(s.privateContent?.camera)Object.assign(state,s.privateContent.camera);if(s.privateContent?.items){objectMotion.running=!!s.privateContent.items.running;if(Number.isFinite(s.privateContent.items.time))itemTime=Math.max(0,s.privateContent.items.time);runtimeLight();lightControls();}if(s.privateContent?.lighting){Object.assign(lighting,s.privateContent.lighting);runtimeLight();lightControls();}paint();});
+new ResizeObserver(paint).observe(canvas);paint();startLighting();window.BLOCK_STUDY={capture:()=&gt;scene.toDataURL(&#x27;image/png&#x27;),state:()=&gt;({...state,seed,showScale,items:{...objectMotion,time:itemTime},lighting:{...lighting},time:lightTime,frames:renderedFrames}),at:t=&gt;{lightTime=t;runtimeLight(t);paint();},pause:()=&gt;{lighting.running=false;objectMotion.running=false;lightControls();},itemAt:t=&gt;{itemTime=Math.max(0,t);runtimeLight();paint();},shadowKinds:kinds=&gt;{shadowFilter=kinds?new Set(kinds):null;runtimeLight();paint();},generate:s=&gt;{seed=s&gt;&gt;&gt;0;compose();paint();},plan:makeLayout,validate:validateLayout,get stats(){return{itemEffects:itemEffects.map(o=&gt;({...o})),details:detailItems.map(o=&gt;({...o})),itemFrame:Math.floor(itemTime*12),scale:{pixelsPerMetre:METRES,adultHeight:ADULT_HEIGHT,railHeight:RAIL_HEIGHT},props:placedProps,fixtures:fixtures.map(f=&gt;({...f})),references:scaleReferences(),sprites:count,lights:lights.length,width:W,height:H,seed,signs,layout,lightMs:lastLightMs,lightTypes:lights.map(l=&gt;l.type),occluders:occluders.reduce((a,o)=&gt;(a[o.type]=(a[o.type]||0)+1,a),{}),shadowFaces:lights.reduce((n,l)=&gt;n+shadowQuads(l,l.x,l.y).length,0)};}};
 })();
 &lt;/script&gt;
 
