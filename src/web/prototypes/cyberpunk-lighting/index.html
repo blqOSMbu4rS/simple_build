@@ -1956,6 +1956,7 @@ function itemPoly(points,color,alpha=1){
 function itemRect(x,y,w,h,color,alpha=1){ic.globalAlpha=alpha;ic.fillStyle=color;ic.fillRect(Math.round(x/2)*2,Math.round(y/2)*2,Math.max(2,Math.round(w/2)*2),Math.max(2,Math.round(h/2)*2));}
 function itemCircle(x,y,r,color,alpha=1){itemPoly(Array.from({length:12},(_,i)=&gt;[x+Math.cos(i*Math.PI/6)*r,y+Math.sin(i*Math.PI/6)*r]),color,alpha);}
 const ITEM_DRAW={
+ pinwheel(o,t){const cycle=(t+o.phase)%14,turn=Math.floor((t+o.phase)/14)*Math.PI*2+Math.min(cycle,4)*Math.PI/2;for(let k=0;k&lt;4;k++){const a=turn+k*Math.PI/2;itemPoly([[o.x,o.y],[o.x+Math.cos(a)*6,o.y+Math.sin(a)*6],[o.x+Math.cos(a+.7)*5,o.y+Math.sin(a+.7)*5]],k%2?&#x27;#a6a388&#x27;:&#x27;#7e9b9a&#x27;);}itemRect(o.x-1,o.y-1,2,2,&#x27;#c0b497&#x27;);},
  display(o,t){const value=Math.floor((t+o.phase)/6)%3;itemRect(o.x,o.y,18,8,&#x27;#304c53&#x27;);for(let k=0;k&lt;3;k++){const n=(value+k)%3;itemRect(o.x+2+k*5,o.y+2,3,2,&#x27;#9cb9a6&#x27;,.8);itemRect(o.x+2+k*5+(n===1?2:0),o.y+4,2,2,&#x27;#9cb9a6&#x27;,.8);}},
  paperFlutter(o,t){const u=(t+o.phase)%11,lift=u&lt;3?Math.sin(u*Math.PI/3)*4:0;itemPoly([[o.x,o.y],[o.x+10,o.y],[o.x+10-lift,o.y+8-lift],[o.x,o.y+8]],&#x27;#b6b49d&#x27;);itemRect(o.x+2,o.y+2,4,2,&#x27;#708b8a&#x27;,.65);},
  signal(o,t){const u=(t+o.phase)%12,on=u&lt;1.4||u&gt;2&amp;&amp;u&lt;2.5;itemRect(o.x,o.y,4,3,on?&#x27;#c5b88b&#x27;:&#x27;#526668&#x27;);},
@@ -1972,6 +1973,7 @@ const ITEM_DRAW={
   itemCircle(o.x,o.y,3,&#x27;#b8aa83&#x27;);
  },
  steam(o,t){
+  if(o.intermittent&amp;&amp;(t+o.phase)%18&gt;5)return;
   const breeze=Math.sin(t*.52)*2;
   for(let k=0;k&lt;3;k++){
    const age=(t*.24+k*.31+o.phase/7)%1;if(age&gt;.83)continue;
@@ -2164,7 +2166,10 @@ function sprite(k,x,y,w,h,flip=false){const s=S[k];if(!s)throw Error(&#x27;missi
 function prop(k,x,base,w,h,flip=false){
  const metric=PROP_METRICS[k];if(metric){w=metric.w?metric.w*METRES:undefined;h=metric.h?metric.h*METRES:undefined;}
  const s=S[&#x27;shared/&#x27;+k],sc=Math.min(w?w/s.w:1,h?h/s.h:Infinity),b=sprite(&#x27;shared/&#x27;+k,x,base-Math.round(s.h*sc),w,h,flip);
- propBlocker(k,b,flip);placedProps.push({kind:k,...b});
+ propBlocker(k,b,flip);
+ const wear={&#x27;table-work&#x27;:[[5,3,8],[18,3,4]],&#x27;table-round&#x27;:[[5,3,6]],&#x27;cabinet-low&#x27;:[[3,3,6]]}[k];
+ if(wear)for(const [dx,dy,ww] of wear)rect(b.x+dx,b.y+dy,ww,2,&#x27;#9b9d88&#x27;);
+ placedProps.push({kind:k,...b});
  if(k===&#x27;monitor&#x27;){source(b.x+b.w*.5,b.y+b.h*.35,65,&#x27;75,204,245&#x27;,.46,&#x27;screen&#x27;);addItemEffect(&#x27;screen&#x27;,{x:b.x+b.w*.13,y:b.y+b.h*.12,w:b.w*.72,h:b.h*.43});}
  if(k===&#x27;sink&#x27;){const xx=b.x+b.w*.45,yy=b.y+4;line([[xx-8,yy+3],[xx-8,yy-8],[xx,yy-8],[xx,yy-4]],&#x27;#91aaa7&#x27;,2);addItemEffect(&#x27;drip&#x27;,{x:xx,y:yy-3,impact:yy+8,radius:4});}
  if(k===&#x27;washer&#x27;)addItemEffect(&#x27;drum&#x27;,{x:b.x+b.w*.48,y:b.y+b.h*.57,r:b.w*.205});
@@ -2273,11 +2278,11 @@ function roomDetails(x,y,w,h,kind){
  }else if(kind===&#x27;bunks&#x27;){
    poster(x+177,y+20,28,34,&#x27;ORBIT&#x27;,&#x27;#788d9e&#x27;);clockFace(x+w-40,y+25);
    box(x+33,base,35,17);box(x+77,base,39,14);basket(x+156,base,25);
-   const b=prop(&#x27;table-round&#x27;,x+184,base,54);mug(b.x+15,b.top+4);rect(b.x+31,b.top+1,12,3,&#x27;#c6a475&#x27;);
+   const b=prop(&#x27;table-round&#x27;,x+184,base,54);rect(b.x+5,b.top+2,7,2,&#x27;#a5a087&#x27;);
    line([[x+155,y+46],[x+155,base-28]],&#x27;#53626b&#x27;,2);rect(x+148,base-40,15,27,&#x27;#7b6668&#x27;);rect(x+151,base-42,8,5,&#x27;#a58d77&#x27;);
  }else if(kind===&#x27;home&#x27;){
    poster(x+124,y+21,25,29,&#x27;MOON&#x27;,&#x27;#6e8898&#x27;);box(x+40,base,35,15);
-   const b=prop(&#x27;cabinet-low&#x27;,x+w-80,base,48);mug(b.x+7,b.top+3);prop(&#x27;planter&#x27;,b.x+36,b.top+3,20);
+   const b=prop(&#x27;cabinet-low&#x27;,x+w-80,base,48);prop(&#x27;planter&#x27;,b.x+36,b.top+3,20);
    rect(x+39,base-31,38,22,&#x27;#9e6875&#x27;);for(let j=0;j&lt;4;j++)rect(x+40+j*9,base-30,2,19,&#x27;#c69791&#x27;);
  }else if(kind===&#x27;laundry&#x27;){
    poster(x+w-75,y+24,31,42,&#x27;24/7&#x27;,&#x27;#89a5a5&#x27;);clockFace(x+37,y+28);
@@ -2291,8 +2296,8 @@ function roomDetails(x,y,w,h,kind){
 }
 // Dressing uses support/edge anchors, while movement is selected only by generic effect type.
 const ROOM_DRESSING={
- home:[{type:&#x27;bedside&#x27;,support:&#x27;bed-single&#x27;,dx:132,dy:12},{type:&#x27;bedding&#x27;,support:&#x27;bed-single&#x27;,dx:48,dy:-8},{type:&#x27;radio&#x27;,support:&#x27;cabinet-low&#x27;,dx:13,dy:-12},{type:&#x27;fan&#x27;,right:36,dy:83},{type:&#x27;curtains&#x27;,right:95,dy:37,w:65,h:32},{type:&#x27;shoes&#x27;,floor:true,dx:104,dy:-6}],
- bunks:[{type:&#x27;bedding&#x27;,support:&#x27;bed-bunk&#x27;,dx:45,dy:12},{type:&#x27;fan&#x27;,dx:162,dy:30},{type:&#x27;paper&#x27;,support:&#x27;table-round&#x27;,dx:2,dy:-3}],
+ home:[{type:&#x27;bedside&#x27;,support:&#x27;bed-single&#x27;,dx:132,dy:12},{type:&#x27;bedding&#x27;,support:&#x27;bed-single&#x27;,dx:48,dy:-8},{type:&#x27;personality&#x27;,support:&#x27;cabinet-low&#x27;,dx:0,dy:-16,themes:[&#x27;reader&#x27;,&#x27;maker&#x27;,&#x27;supper&#x27;]},{type:&#x27;memories&#x27;,dx:115,dy:78},{type:&#x27;entryHooks&#x27;,dx:160,dy:22},{type:&#x27;wallMend&#x27;,dx:31,dy:82},{type:&#x27;fan&#x27;,right:36,dy:83},{type:&#x27;curtains&#x27;,right:95,dy:37,w:65,h:32},{type:&#x27;shoes&#x27;,floor:true,dx:104,dy:-6}],
+ bunks:[{type:&#x27;personality&#x27;,support:&#x27;table-round&#x27;,dx:1,dy:-16,themes:[&#x27;reader&#x27;,&#x27;maker&#x27;,&#x27;supper&#x27;]},{type:&#x27;bedding&#x27;,support:&#x27;bed-bunk&#x27;,dx:45,dy:12},{type:&#x27;fan&#x27;,dx:162,dy:30},{type:&#x27;entryHooks&#x27;,dx:209,dy:20}],
  noodle:[{type:&#x27;pickup&#x27;,support:&#x27;counter-middle&#x27;,index:2,dx:1,dy:-20},{type:&#x27;prep&#x27;,support:&#x27;counter-middle&#x27;,dx:2,dy:-4},{type:&#x27;simmer&#x27;,support:&#x27;counter-middle&#x27;,index:1,dx:3,dy:-10},{type:&#x27;clothHook&#x27;,support:&#x27;counter-middle&#x27;,index:2,dx:72,dy:15},{type:&#x27;hood&#x27;,support:&#x27;stock-pot&#x27;,index:2,dx:-18,dy:-35},{type:&#x27;condiments&#x27;,support:&#x27;counter-middle&#x27;,dx:68,dy:-12},{type:&#x27;dishes&#x27;,support:&#x27;counter-middle&#x27;,index:1,dx:68,dy:-3},{type:&#x27;extinguisher&#x27;,floor:true,right:90,dy:-31}],
  tailor:[{type:&#x27;spools&#x27;,support:&#x27;table-work&#x27;,dx:70,dy:-10},{type:&#x27;paper&#x27;,support:&#x27;table-work&#x27;,dx:3,dy:-3}],
  laundry:[{type:&#x27;detergent&#x27;,right:47,dy:92}],
@@ -2300,7 +2305,17 @@ const ROOM_DRESSING={
  repair:[{type:&#x27;returns&#x27;,floor:true,right:39,dy:-24},{type:&#x27;repairKit&#x27;,support:&#x27;table-work&#x27;,dx:2,dy:-13},{type:&#x27;solder&#x27;,support:&#x27;table-work&#x27;,dx:80,dy:-8},{type:&#x27;clipboard&#x27;,dx:103,dy:44},{type:&#x27;parts&#x27;,support:&#x27;table-work&#x27;,dx:4,dy:14},{type:&#x27;meter&#x27;,right:32,dy:69}],
  market:[{type:&#x27;scale&#x27;,support:&#x27;cabinet-low&#x27;,index:1,dx:30,dy:-18},{type:&#x27;paperBags&#x27;,support:&#x27;cabinet-low&#x27;,index:1,dx:4,dy:-16},{type:&#x27;crates&#x27;,floor:true,right:113,dy:-27},{type:&#x27;price&#x27;,support:&#x27;produce-crate&#x27;,dx:31,dy:-7},{type:&#x27;paper&#x27;,support:&#x27;cabinet-low&#x27;,index:1,dx:53,dy:-3}]
 };
+// Small personal arrangements share a support footprint and one principal effect each.
+const PERSONAL_DRAW={
+ reader(x,y){rect(x,y+12,27,4,&#x27;#7f9695&#x27;);rect(x+2,y+9,23,3,&#x27;#b3a083&#x27;);poly([[x+1,y+4],[x+13,y+6],[x+25,y+3],[x+25,y+10],[x+13,y+12],[x+1,y+10]],&#x27;#c4b99a&#x27;);rect(x+12,y+6,2,6,&#x27;#788c87&#x27;);rect(x+8,y+7,2,7,&#x27;#9d7972&#x27;);addItemEffect(&#x27;paperFlutter&#x27;,{x:x+15,y:y+4});rect(x+29,y+5,7,11,&#x27;#6e898e&#x27;);for(let k=0;k&lt;2;k++)rect(x+30+k*3,y-1+k*2,2,9,&#x27;#b2a58a&#x27;);},
+ maker(x,y){rect(x,y+13,35,3,&#x27;#a29c81&#x27;);rect(x+2,y+8,18,5,&#x27;#718d8e&#x27;);rect(x+5,y+4,9,5,&#x27;#a4ab94&#x27;);rect(x+8,y+1,3,4,&#x27;#637d85&#x27;);rect(x+3,y+12,4,3,&#x27;#3c5962&#x27;);rect(x+14,y+12,4,3,&#x27;#3c5962&#x27;);rect(x+24,y+1,2,14,&#x27;#a69f83&#x27;);addItemEffect(&#x27;pinwheel&#x27;,{x:x+25,y:y+1});rect(x+29,y+11,6,3,&#x27;#b5ad91&#x27;);rect(x+30,y+9,3,2,&#x27;#849c8e&#x27;);},
+ supper(x,y){rect(x,y+12,18,3,&#x27;#aab4a0&#x27;);rect(x+2,y+9,14,3,&#x27;#7a9494&#x27;);line([[x+3,y+9],[x+18,y+6]],&#x27;#bcac88&#x27;,2);mug(x+22,y+15,&#x27;#a5ac91&#x27;);addItemEffect(&#x27;steam&#x27;,{x:x+26,y:y+7,rise:15,intermittent:true});rect(x+1,y+1,11,7,&#x27;#b09b7b&#x27;);rect(x+2,y+3,9,2,&#x27;#c5b393&#x27;);rect(x+16,y+13,4,3,&#x27;#b8baa0&#x27;);}
+};
 const DETAIL_DRAW={
+ personality(x,y,o){const choices=o.themes,choice=choices[(Math.floor(rand(seed)*choices.length)+Math.floor(x/32)+Math.floor(y/48))%choices.length];PERSONAL_DRAW[choice](x,y);detailItems.push({type:&#x27;resident-theme&#x27;,theme:choice,x,y,w:36,h:18,room:activeRoom?{...activeRoom}:null});},
+ memories(x,y){rect(x,y,22,18,&#x27;#81918a&#x27;);rect(x+2,y+2,18,14,&#x27;#c0b496&#x27;);poly([[x+4,y+12],[x+8,y+6],[x+12,y+10],[x+17,y+5],[x+19,y+12]],&#x27;#748e8b&#x27;);rect(x+4,y+3,4,3,&#x27;#aa9b7c&#x27;);for(let k=0;k&lt;3;k++)rect(x+25,y+5+k*5,4+k%2*2,1,&#x27;#9b9e87&#x27;);rect(x+24,y+1,1,18,&#x27;#738984&#x27;);},
+ entryHooks(x,y){rect(x,y,21,3,&#x27;#8f998b&#x27;);for(let k=0;k&lt;3;k++){rect(x+4+k*6,y+3,2,5,&#x27;#b3b29b&#x27;);rect(x+3+k*6,y+7,4,3,k===2?&#x27;#9e887a&#x27;:&#x27;#6e8990&#x27;);}},
+ wallMend(x,y){rect(x,y,19,10,&#x27;#879b94&#x27;);rect(x+2,y+1,15,2,&#x27;#a5ad96&#x27;);line([[x+5,y+4],[x+9,y+5],[x+13,y+4]],&#x27;#6b8588&#x27;,1);},
  roofLaundry(x,y){
   for(const xx of [x,x+65]){blockRect(xx,y,3,46);rect(xx,y,3,46,&#x27;#71878b&#x27;);rect(xx-4,y+44,11,3,&#x27;#344e5b&#x27;);}line([[x,y+3],[x+67,y+3]],&#x27;#a3b1a6&#x27;,2);
   for(let k=0;k&lt;2;k++){addItemEffect(&#x27;cloth&#x27;,{x:x+8+k*29,y:y+5,w:20,h:25+k*4,color:k?&#x27;#a99c83&#x27;:&#x27;#879b9d&#x27;,shape:&#x27;curtain&#x27;,breeze:true});rect(x+12+k*29,y+1,3,5,&#x27;#bdb194&#x27;);}
