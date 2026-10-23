@@ -1828,6 +1828,21 @@ const ROOM_LIGHTS={home:[&#x27;pendant&#x27;,&#x27;globe&#x27;],noodle:[&#x27;do
 let showScale=false;
 const placedProps=[],fixtures=[];
 const itemEffects=[],detailItems=[];
+let lifeConnections=[];
+function planLifeConnections(plan){
+ const homes=plan.rooms.filter(q=&gt;q.kind===&#x27;home&#x27;),connections=[];if(!homes.length)return connections;
+ const definitions=[{type:&#x27;food&#x27;,kind:&#x27;noodle&#x27;},{type:&#x27;repair&#x27;,kind:&#x27;repair&#x27;},{type:&#x27;textile&#x27;,kind:&#x27;tailor&#x27;}];
+ for(const [i,d] of definitions.entries()){
+  const source=plan.rooms.find(q=&gt;q.kind===d.kind);if(!source)continue;
+  const roof=d.type===&#x27;textile&#x27;?plan.towers.find(t=&gt;t.roof!==&#x27;equipment&#x27;):null;if(d.type===&#x27;textile&#x27;&amp;&amp;!roof)continue;
+  const target=d.type===&#x27;textile&#x27;?null:homes[i%homes.length];
+  connections.push({type:d.type,color:[&#x27;#a99b7d&#x27;,&#x27;#819c9c&#x27;,&#x27;#a18a91&#x27;][(i+(plan.seed%3))%3],mark:i+1,source:{x:source.x,y:source.top},target:target?{x:target.x,y:target.top}:null,roof:roof?{x:roof.levels.at(-1).x,y:roof.levels.at(-1).top-26}:null});
+ }
+ return connections;
+}
+function connectionAt(x,y,side){return lifeConnections.find(q=&gt;q[side]?.x===x&amp;&amp;q[side]?.y===y);}
+function lifeMark(x,y,q){x=Math.round(x/2)*2;y=Math.round(y/2)*2;rect(x,y,12,6,q.color);for(let i=0;i&lt;q.mark;i++)rect(x+i*4,y+2,2,2,&#x27;#c4bba0&#x27;);}
+
 let itemTime=0,itemFrameKey=&#x27;&#x27;;
 // Keep the scene on one raster path when snapshots/readbacks are requested.
 const c=scene.getContext(&#x27;2d&#x27;,{willReadFrequently:true});c.imageSmoothingEnabled=false;
@@ -1993,6 +2008,7 @@ const ITEM_DRAW={
   const wind=(t%12)&lt;4?Math.sin((t%12)*Math.PI/2)*2:0;const sway=o.breeze?Math.round(wind/2)*2:Math.round((Math.sin(t*.52)*1.8+Math.sin(t*.83+o.phase)*1.2)/2)*2,x=o.x,y=o.y,w=o.w,h=o.h;
   if(o.shape===&#x27;curtain&#x27;){
    itemPoly([[x,y],[x+w,y],[x+w+sway,y+h],[x+sway,y+h-2]],o.color,.86);
+   if(o.patch){itemRect(x+3+sway*.5,y+h*.55,12,6,&#x27;#b9b59a&#x27;);for(let k=0;k&lt;o.patch.mark;k++)itemRect(x+4+k*4+sway*.5,y+h*.55+2,2,2,&#x27;#687e83&#x27;);}
    for(let k=3;k&lt;w;k+=5)itemPoly([[x+k,y],[x+k+2,y],[x+k+sway+2,y+h-3],[x+k+sway,y+h-3]],&#x27;#b8b0a0&#x27;,.35);
   }else{
    itemPoly([[x+w*.3,y],[x+w*.43,y+3],[x+w*.6,y],[x+w*.82,y+4],[x+w+2,y+h*.35],[x+w*.8+sway*.4,y+h*.45],[x+w*.77+sway,y+h],[x+w*.16+sway,y+h-1],[x+w*.14+sway*.4,y+h*.43],[x-3,y+h*.34],[x+w*.06,y+4]],o.color);
@@ -2307,18 +2323,21 @@ const ROOM_DRESSING={
 };
 // Small personal arrangements share a support footprint and one principal effect each.
 const PERSONAL_DRAW={
+ repaired(x,y){blockRect(x,y+3,29,13);rect(x,y+3,29,13,&#x27;#68828a&#x27;);rect(x+2,y+5,13,8,&#x27;#334f5b&#x27;);for(let k=0;k&lt;3;k++)rect(x+3+k*4,y+6,2,6,&#x27;#8b9e96&#x27;);rect(x+18,y+5,8,4,&#x27;#afb295&#x27;);rect(x+19,y+11,4,3,&#x27;#425e69&#x27;);rect(x+25,y+11,4,3,&#x27;#b8ac8c&#x27;);line([[x+5,y+3],[x+5,y-5],[x+12,y-9]],&#x27;#899d99&#x27;,2);addItemEffect(&#x27;signal&#x27;,{x:x+21,y:y+6});rect(x+31,y+11,4,5,&#x27;#a9967e&#x27;);},
  reader(x,y){rect(x,y+12,27,4,&#x27;#7f9695&#x27;);rect(x+2,y+9,23,3,&#x27;#b3a083&#x27;);poly([[x+1,y+4],[x+13,y+6],[x+25,y+3],[x+25,y+10],[x+13,y+12],[x+1,y+10]],&#x27;#c4b99a&#x27;);rect(x+12,y+6,2,6,&#x27;#788c87&#x27;);rect(x+8,y+7,2,7,&#x27;#9d7972&#x27;);addItemEffect(&#x27;paperFlutter&#x27;,{x:x+15,y:y+4});rect(x+29,y+5,7,11,&#x27;#6e898e&#x27;);for(let k=0;k&lt;2;k++)rect(x+30+k*3,y-1+k*2,2,9,&#x27;#b2a58a&#x27;);},
  maker(x,y){rect(x,y+13,35,3,&#x27;#a29c81&#x27;);rect(x+2,y+8,18,5,&#x27;#718d8e&#x27;);rect(x+5,y+4,9,5,&#x27;#a4ab94&#x27;);rect(x+8,y+1,3,4,&#x27;#637d85&#x27;);rect(x+3,y+12,4,3,&#x27;#3c5962&#x27;);rect(x+14,y+12,4,3,&#x27;#3c5962&#x27;);rect(x+24,y+1,2,14,&#x27;#a69f83&#x27;);addItemEffect(&#x27;pinwheel&#x27;,{x:x+25,y:y+1});rect(x+29,y+11,6,3,&#x27;#b5ad91&#x27;);rect(x+30,y+9,3,2,&#x27;#849c8e&#x27;);},
  supper(x,y){rect(x,y+12,18,3,&#x27;#aab4a0&#x27;);rect(x+2,y+9,14,3,&#x27;#7a9494&#x27;);line([[x+3,y+9],[x+18,y+6]],&#x27;#bcac88&#x27;,2);mug(x+22,y+15,&#x27;#a5ac91&#x27;);addItemEffect(&#x27;steam&#x27;,{x:x+26,y:y+7,rise:15,intermittent:true});rect(x+1,y+1,11,7,&#x27;#b09b7b&#x27;);rect(x+2,y+3,9,2,&#x27;#c5b393&#x27;);rect(x+16,y+13,4,3,&#x27;#b8baa0&#x27;);}
 };
 const DETAIL_DRAW={
- personality(x,y,o){const choices=o.themes,choice=choices[(Math.floor(rand(seed)*choices.length)+Math.floor(x/32)+Math.floor(y/48))%choices.length];PERSONAL_DRAW[choice](x,y);detailItems.push({type:&#x27;resident-theme&#x27;,theme:choice,x,y,w:36,h:18,room:activeRoom?{...activeRoom}:null});},
+ personality(x,y,o){const choices=o.themes,choice=o.connection?.type===&#x27;food&#x27;?&#x27;supper&#x27;:o.connection?.type===&#x27;repair&#x27;?&#x27;repaired&#x27;:choices[(Math.floor(rand(seed)*choices.length)+Math.floor(x/32)+Math.floor(y/48))%choices.length];PERSONAL_DRAW[choice](x,y);if(o.connection)lifeMark(x+2,y+2,o.connection);detailItems.push({type:&#x27;resident-theme&#x27;,theme:choice,x,y,w:36,h:18,room:activeRoom?{...activeRoom}:null});},
  memories(x,y){rect(x,y,22,18,&#x27;#81918a&#x27;);rect(x+2,y+2,18,14,&#x27;#c0b496&#x27;);poly([[x+4,y+12],[x+8,y+6],[x+12,y+10],[x+17,y+5],[x+19,y+12]],&#x27;#748e8b&#x27;);rect(x+4,y+3,4,3,&#x27;#aa9b7c&#x27;);for(let k=0;k&lt;3;k++)rect(x+25,y+5+k*5,4+k%2*2,1,&#x27;#9b9e87&#x27;);rect(x+24,y+1,1,18,&#x27;#738984&#x27;);},
  entryHooks(x,y){rect(x,y,21,3,&#x27;#8f998b&#x27;);for(let k=0;k&lt;3;k++){rect(x+4+k*6,y+3,2,5,&#x27;#b3b29b&#x27;);rect(x+3+k*6,y+7,4,3,k===2?&#x27;#9e887a&#x27;:&#x27;#6e8990&#x27;);}},
  wallMend(x,y){rect(x,y,19,10,&#x27;#879b94&#x27;);rect(x+2,y+1,15,2,&#x27;#a5ad96&#x27;);line([[x+5,y+4],[x+9,y+5],[x+13,y+4]],&#x27;#6b8588&#x27;,1);},
  roofLaundry(x,y){
+  const related=lifeConnections.find(q=&gt;q.roof?.x===x-18&amp;&amp;q.roof?.y===y+48);
   for(const xx of [x,x+65]){blockRect(xx,y,3,46);rect(xx,y,3,46,&#x27;#71878b&#x27;);rect(xx-4,y+44,11,3,&#x27;#344e5b&#x27;);}line([[x,y+3],[x+67,y+3]],&#x27;#a3b1a6&#x27;,2);
-  for(let k=0;k&lt;2;k++){addItemEffect(&#x27;cloth&#x27;,{x:x+8+k*29,y:y+5,w:20,h:25+k*4,color:k?&#x27;#a99c83&#x27;:&#x27;#879b9d&#x27;,shape:&#x27;curtain&#x27;,breeze:true});rect(x+12+k*29,y+1,3,5,&#x27;#bdb194&#x27;);}
+  for(let k=0;k&lt;2;k++){addItemEffect(&#x27;cloth&#x27;,{x:x+8+k*29,y:y+5,w:20,h:25+k*4,color:related&amp;&amp;k===0?related.color:k?&#x27;#a99c83&#x27;:&#x27;#879b9d&#x27;,shape:&#x27;curtain&#x27;,breeze:true,patch:related&amp;&amp;k===0?{color:related.color,mark:related.mark}:null});rect(x+12+k*29,y+1,3,5,&#x27;#bdb194&#x27;);}
+  if(related)detailItems.push({type:&#x27;connection-end&#x27;,link:related.type,side:&#x27;roof&#x27;,x:x+8,y:y+5,color:related.color,mark:related.mark});
   basket(x+48,y+46,19);rect(x+4,y+44,29,3,&#x27;#708b8e&#x27;);rect(x+7,y+40,23,4,&#x27;#b6ad96&#x27;);
  },
  seedTray(x,y){blockRect(x,y+8,32,10);rect(x,y+8,32,10,&#x27;#677e76&#x27;);rect(x+2,y+10,28,5,&#x27;#465951&#x27;);for(let k=0;k&lt;4;k++){rect(x+5+k*7,y+3,2,8,&#x27;#8b9f74&#x27;);rect(x+2+k*7,y+2,5,3,&#x27;#6b9175&#x27;);}rect(x+27,y-3,2,12,&#x27;#a8ae90&#x27;);rect(x+23,y-5,10,5,&#x27;#b9b69b&#x27;);},
@@ -2379,7 +2398,12 @@ function dressRoom(x,y,w,h,kind,props){
   const support=o.support?props.filter(p=&gt;p.kind===o.support)[o.index||0]:null;if(o.support&amp;&amp;!support)continue;
   const px=support?support.x+(o.dx||0):o.right!==undefined?x+w-o.right:x+(o.dx||0);
   const py=(support?support.top:o.floor?y+h-3:y)+(o.dy||0);
-  DETAIL_DRAW[o.type](px,py,o);detailItems.push({type:o.type,x:px,y:py,room:{...activeRoom}});
+  const incoming=connectionAt(x,y,&#x27;target&#x27;),outgoing=connectionAt(x,y,&#x27;source&#x27;);
+  DETAIL_DRAW[o.type](px,py,{...o,connection:o.type===&#x27;personality&#x27;?incoming:null});
+  if(o.type===&#x27;personality&#x27;&amp;&amp;incoming)detailItems.push({type:&#x27;connection-end&#x27;,link:incoming.type,side:&#x27;target&#x27;,x:px,y:py,color:incoming.color,mark:incoming.mark});
+  if(outgoing&amp;&amp;((outgoing.type===&#x27;food&#x27;&amp;&amp;o.type===&#x27;pickup&#x27;)||(outgoing.type===&#x27;repair&#x27;&amp;&amp;o.type===&#x27;returns&#x27;))){lifeMark(px+(outgoing.type===&#x27;food&#x27;?18:12),py+(outgoing.type===&#x27;food&#x27;?12:-5),outgoing);detailItems.push({type:&#x27;connection-end&#x27;,link:outgoing.type,side:&#x27;source&#x27;,x:px,y:py,color:outgoing.color,mark:outgoing.mark});}
+  if(outgoing?.type===&#x27;textile&#x27;&amp;&amp;o.type===&#x27;paper&#x27;){rect(px,py-2,14,7,outgoing.color);lifeMark(px+3,py-1,outgoing);detailItems.push({type:&#x27;connection-end&#x27;,link:outgoing.type,side:&#x27;source&#x27;,x:px,y:py,color:outgoing.color,mark:outgoing.mark});}
+  detailItems.push({type:o.type,x:px,y:py,room:{...activeRoom}});
  }
 }
 function room(x,y,w,h,kind,cold=false){
@@ -2578,7 +2602,7 @@ function tower(t,r){
  const q=t.levels[0];box(q.x-39,789,27,24);plant(q.x-8,789,30);
 }
 function generateBlock(){
- layout=makeLayout(seed);const valid=validateLayout(layout);if(!valid.ok)throw Error(valid.errors.join(&#x27;, &#x27;));
+ layout=makeLayout(seed);lifeConnections=planLifeConnections(layout);const valid=validateLayout(layout);if(!valid.ok)throw Error(valid.errors.join(&#x27;, &#x27;));
  const r=seeded(seed^0x51f3a7),[a,b]=layout.towers;
  const left=a.levels[0].x+a.levels[0].w,right=b.levels[0].x;
  const mid=(left+right)/2;
@@ -2663,7 +2687,7 @@ root.querySelector(&#x27;[data-action=generate]&#x27;).addEventListener(&#x27;cl
 root.querySelectorAll(&#x27;[data-view]&#x27;).forEach(b=&gt;b.addEventListener(&#x27;click&#x27;,()=&gt;{state=b.dataset.view===&#x27;street&#x27;?{view:&#x27;street&#x27;,x:650,y:661,zoom:1.75}:b.dataset.view===&#x27;roof&#x27;?{view:&#x27;roof&#x27;,x:650,y:279,zoom:1.7}:{view:&#x27;all&#x27;,x:640,y:470,zoom:1};paint();remember();}));
 let drag=null;canvas.addEventListener(&#x27;pointerdown&#x27;,e=&gt;{drag={x:e.clientX,y:e.clientY,cx:state.x,cy:state.y};canvas.setPointerCapture(e.pointerId);});canvas.addEventListener(&#x27;pointermove&#x27;,e=&gt;{if(!drag)return;const s=canvas.clientWidth/W*state.zoom;state.x=Math.max(W/(2*state.zoom),Math.min(W-W/(2*state.zoom),drag.cx-(e.clientX-drag.x)/s));state.y=Math.max(H/(2*state.zoom),Math.min(H-H/(2*state.zoom),drag.cy-(e.clientY-drag.y)/s));paint();});for(const k of [&#x27;pointerup&#x27;,&#x27;pointercancel&#x27;])canvas.addEventListener(k,()=&gt;{if(drag){drag=null;remember();}});
 window.addEventListener(&#x27;openai:set_globals&#x27;,e=&gt;{const s=e.detail?.globals?.widgetState;if(!s)return;if(Number.isInteger(s.modelContent?.seed)&amp;&amp;seed!==(s.modelContent.seed&gt;&gt;&gt;0)){seed=s.modelContent.seed&gt;&gt;&gt;0;compose();}if(s.privateContent?.camera)Object.assign(state,s.privateContent.camera);if(s.privateContent?.items){objectMotion.running=!!s.privateContent.items.running;if(Number.isFinite(s.privateContent.items.time))itemTime=Math.max(0,s.privateContent.items.time);runtimeLight();lightControls();}if(s.privateContent?.lighting){Object.assign(lighting,s.privateContent.lighting);runtimeLight();lightControls();}paint();});
-new ResizeObserver(paint).observe(canvas);paint();startLighting();window.BLOCK_STUDY={capture:()=&gt;scene.toDataURL(&#x27;image/png&#x27;),state:()=&gt;({...state,seed,showScale,items:{...objectMotion,time:itemTime},lighting:{...lighting},time:lightTime,frames:renderedFrames}),at:t=&gt;{lightTime=t;runtimeLight(t);paint();},pause:()=&gt;{lighting.running=false;objectMotion.running=false;lightControls();},itemAt:t=&gt;{itemTime=Math.max(0,t);runtimeLight();paint();},shadowKinds:kinds=&gt;{shadowFilter=kinds?new Set(kinds):null;runtimeLight();paint();},generate:s=&gt;{seed=s&gt;&gt;&gt;0;compose();paint();},plan:makeLayout,validate:validateLayout,get stats(){return{itemEffects:itemEffects.map(o=&gt;({...o})),details:detailItems.map(o=&gt;({...o})),itemFrame:Math.floor(itemTime*12),scale:{pixelsPerMetre:METRES,adultHeight:ADULT_HEIGHT,railHeight:RAIL_HEIGHT},props:placedProps,fixtures:fixtures.map(f=&gt;({...f})),references:scaleReferences(),sprites:count,lights:lights.length,width:W,height:H,seed,signs,layout,lightMs:lastLightMs,lightTypes:lights.map(l=&gt;l.type),occluders:occluders.reduce((a,o)=&gt;(a[o.type]=(a[o.type]||0)+1,a),{}),shadowFaces:lights.reduce((n,l)=&gt;n+shadowQuads(l,l.x,l.y).length,0)};}};
+new ResizeObserver(paint).observe(canvas);paint();startLighting();window.BLOCK_STUDY={capture:()=&gt;scene.toDataURL(&#x27;image/png&#x27;),state:()=&gt;({...state,seed,showScale,items:{...objectMotion,time:itemTime},lighting:{...lighting},time:lightTime,frames:renderedFrames}),at:t=&gt;{lightTime=t;runtimeLight(t);paint();},pause:()=&gt;{lighting.running=false;objectMotion.running=false;lightControls();},itemAt:t=&gt;{itemTime=Math.max(0,t);runtimeLight();paint();},shadowKinds:kinds=&gt;{shadowFilter=kinds?new Set(kinds):null;runtimeLight();paint();},generate:s=&gt;{seed=s&gt;&gt;&gt;0;compose();paint();},plan:makeLayout,validate:validateLayout,connectionPlan:planLifeConnections,get stats(){return{connections:lifeConnections.map(q=&gt;({...q})),itemEffects:itemEffects.map(o=&gt;({...o})),details:detailItems.map(o=&gt;({...o})),itemFrame:Math.floor(itemTime*12),scale:{pixelsPerMetre:METRES,adultHeight:ADULT_HEIGHT,railHeight:RAIL_HEIGHT},props:placedProps,fixtures:fixtures.map(f=&gt;({...f})),references:scaleReferences(),sprites:count,lights:lights.length,width:W,height:H,seed,signs,layout,lightMs:lastLightMs,lightTypes:lights.map(l=&gt;l.type),occluders:occluders.reduce((a,o)=&gt;(a[o.type]=(a[o.type]||0)+1,a),{}),shadowFaces:lights.reduce((n,l)=&gt;n+shadowQuads(l,l.x,l.y).length,0)};}};
 })();
 &lt;/script&gt;
 
