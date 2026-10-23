@@ -1849,9 +1849,10 @@ const c=scene.getContext(&#x27;2d&#x27;,{willReadFrequently:true});c.imageSmooth
 // Static material drawing and runtime light rendering share a two-world-pixel grid.
 const pixelSize=2,pixelCanvas=document.createElement(&#x27;canvas&#x27;),baseCanvas=document.createElement(&#x27;canvas&#x27;);
 pixelCanvas.width=baseCanvas.width=W/pixelSize;pixelCanvas.height=baseCanvas.height=H/pixelSize;
-const pc=pixelCanvas.getContext(&#x27;2d&#x27;,{willReadFrequently:true}),bc=baseCanvas.getContext(&#x27;2d&#x27;);
+// All layers feeding the per-frame readback stay on the same CPU raster path.
+const pc=pixelCanvas.getContext(&#x27;2d&#x27;,{willReadFrequently:true}),bc=baseCanvas.getContext(&#x27;2d&#x27;,{willReadFrequently:true});
 const dimCanvas=document.createElement(&#x27;canvas&#x27;);dimCanvas.width=pixelCanvas.width;dimCanvas.height=pixelCanvas.height;
-const dc=dimCanvas.getContext(&#x27;2d&#x27;);
+const dc=dimCanvas.getContext(&#x27;2d&#x27;,{willReadFrequently:true});
 const itemCanvas=document.createElement(&#x27;canvas&#x27;);itemCanvas.width=pixelCanvas.width;itemCanvas.height=pixelCanvas.height;
 const ic=itemCanvas.getContext(&#x27;2d&#x27;,{willReadFrequently:true});ic.imageSmoothingEnabled=false;
 const dimAlpha=new Float32Array(pixelCanvas.width*pixelCanvas.height);
@@ -1866,14 +1867,20 @@ function prepareColorZones(){
   for(let y=y0;y&lt;y1;y++)warmPixels.fill(1,y*pixelCanvas.width+x0,y*pixelCanvas.width+x1);
  }
 }
+// Quantized RGB plus indoor/outdoor is the complete grading input. Cache exact results.
+const gradeColors=65*65*65,gradeCache=new Uint32Array(gradeColors*2);
 function temperatureGrade(d){
+ const pixels=new Uint32Array(d.buffer,d.byteOffset,d.length/4);
  for(let i=0,p=0;i&lt;d.length;i+=4,p++){
+  const key=warmPixels[p]*gradeColors+(((d[i]+2)&gt;&gt;2)*65+((d[i+1]+2)&gt;&gt;2))*65+((d[i+2]+2)&gt;&gt;2);
+  if(gradeCache[key]){pixels[p]=gradeCache[key];continue;}
   const r=Math.min(255,Math.round(d[i]/4)*4),g=Math.min(255,Math.round(d[i+1]/4)*4),b=Math.min(255,Math.round(d[i+2]/4)*4);
   const indoor=warmPixels[p],rr=r*(indoor?1.12:.80),gg=g*(indoor?1.01:1.025),bb=b*(indoor?.77:1.18);
   const luminance=.2126*r+.7152*g+.0722*b,target=.2126*rr+.7152*gg+.0722*bb;
   // Chromatic adaptation only: normalize luminance and never lift a pixel&#x27;s brightness.
   const scale=target?Math.min(luminance/target,255/Math.max(rr,gg,bb)):0;
   d[i]=Math.floor(rr*scale/4)*4;d[i+1]=Math.floor(gg*scale/4)*4;d[i+2]=Math.floor(bb*scale/4)*4;d[i+3]=255;
+  gradeCache[key]=pixels[p];
  }
 }
 function prepareDimBase(){
@@ -1914,7 +1921,7 @@ function runtimeLight(t=lightTime){
   for(const l of lights){
    const strength=l.alpha*intensity(l,t)*.63,sway=l.type===&#x27;bulb&#x27;?Math.sin(t*.65+l.phase)*5:0;
    const lx=Math.round((l.x+sway)/2)*2,ly=Math.round(l.y/2)*2;
-   drawLight(l,t,strength,lx,ly);
+   drawLight(l,t,lx,ly);
    if(l.y&lt;630)continue;
    // Each reflection follows its own emitter, rather than a baked street overlay.
    for(let j=0;j&lt;20;j++){
@@ -2043,7 +2050,7 @@ function renderItems(){
 
 const occluders=[],shapeCache=new Map();
 let shadowFilter=null;
-const lightCanvas=document.createElement(&#x27;canvas&#x27;),lc=lightCanvas.getContext(&#x27;2d&#x27;);
+const lightCanvas=document.createElement(&#x27;canvas&#x27;),lc=lightCanvas.getContext(&#x27;2d&#x27;,{willReadFrequently:true});
 lightCanvas.width=lightCanvas.height=320;lc.imageSmoothingEnabled=false;
 const shadowSampleCanvas=document.createElement(&#x27;canvas&#x27;),shadowSumCanvas=document.createElement(&#x27;canvas&#x27;);
 shadowSampleCanvas.width=shadowSampleCanvas.height=shadowSumCanvas.width=shadowSumCanvas.height=320;
@@ -2143,23 +2150,35 @@ function softShadowMask(l,lx,ly,left,top,size){
  const im=ss.getImageData(0,0,size,size),d=im.data;
  for(let i=0;i&lt;d.length;i+=4){d[i+3]=d[i];d[i]=d[i+1]=d[i+2]=0;}
  ss.putImageData(im,0,0);
- const cached=document.createElement(&#x27;canvas&#x27;);cached.width=cached.height=size;cached.getContext(&#x27;2d&#x27;).drawImage(shadowSumCanvas,0,0,size,size,0,0,size,size);
+ const cached=document.createElement(&#x27;canvas&#x27;);cached.width=cached.height=size;cached.getContext(&#x27;2d&#x27;,{willReadFrequently:true}).drawImage(shadowSumCanvas,0,0,size,size,0,0,size,size);
  if(l.shadowMasks.size&gt;=8)l.shadowMasks.delete(l.shadowMasks.keys().next().value);
  l.shadowMasks.set(key,cached);return cached;
 }
-function drawLight(l,t,strength,lx,ly){
+function drawLight(l,t,lx,ly){
  const left=Math.floor((lx-l.r)/2)*2,top=Math.floor((ly-l.r)/2)*2,size=Math.ceil(l.r)+4;
- lc.setTransform(1,0,0,1,0,0);lc.globalCompositeOperation=&#x27;source-over&#x27;;lc.globalAlpha=1;lc.clearRect(0,0,320,320);
+ const key=lx+&#x27;,&#x27;+ly+&#x27;:&#x27;+lighting.shadows+&#x27;:&#x27;+(shadowFilter?[...shadowFilter].sort().join(&#x27;,&#x27;):&#x27;all&#x27;);
+ if(!l.lightMaps)l.lightMaps=new Map();
+ let map=l.lightMaps.get(key);
+ if(!map){
+  // Cache fixed falloff and occlusion; intensity still changes on every light frame.
+  map=document.createElement(&#x27;canvas&#x27;);map.width=map.height=size;
+  const mc=map.getContext(&#x27;2d&#x27;,{willReadFrequently:true});mc.imageSmoothingEnabled=false;
+  mc.setTransform(.5,0,0,.5,-left/2,-top/2);
+  if(l.clip){mc.beginPath();mc.rect(l.clip.x,l.clip.y,l.clip.w,l.clip.h);mc.clip();}
+  const g=mc.createRadialGradient(lx,ly,0,lx,ly,l.r);
+  for(const [at,m] of [[0,1],[.2,.74],[.5,.32],[.78,.075],[1,0]])g.addColorStop(at,`rgba(${l.color},${Math.min(.95,l.alpha*.63*m)})`);
+  mc.fillStyle=g;mc.fillRect(lx-l.r,ly-l.r,l.r*2,l.r*2);
+  if(lighting.shadows){
+   const mask=softShadowMask(l,lx,ly,left,top,size);
+   mc.globalCompositeOperation=&#x27;destination-out&#x27;;mc.drawImage(mask,0,0,size,size,left,top,size*2,size*2);
+  }
+  if(l.lightMaps.size&gt;=8)l.lightMaps.delete(l.lightMaps.keys().next().value);
+  l.lightMaps.set(key,map);
+ }
+ lc.setTransform(1,0,0,1,0,0);lc.globalCompositeOperation=&#x27;source-over&#x27;;lc.globalAlpha=1;lc.clearRect(0,0,size,size);
+ lc.globalAlpha=intensity(l,t);lc.drawImage(map,0,0);lc.globalAlpha=1;
  lc.save();lc.setTransform(.5,0,0,.5,-left/2,-top/2);
  if(l.clip){lc.beginPath();lc.rect(l.clip.x,l.clip.y,l.clip.w,l.clip.h);lc.clip();}
- const g=lc.createRadialGradient(lx,ly,0,lx,ly,l.r);
- for(const [at,m] of [[0,1],[.2,.74],[.5,.32],[.78,.075],[1,0]])g.addColorStop(at,`rgba(${l.color},${Math.min(.95,strength*m)})`);
- lc.fillStyle=g;lc.fillRect(lx-l.r,ly-l.r,l.r*2,l.r*2);
- if(lighting.shadows){
-  const mask=softShadowMask(l,lx,ly,left,top,size);
-  lc.globalCompositeOperation=&#x27;destination-out&#x27;;lc.drawImage(mask,0,0,size,size,left,top,size*2,size*2);
- }
- lc.globalCompositeOperation=&#x27;source-over&#x27;;
  if(l.type!==&#x27;window&#x27;){lc.globalAlpha=intensity(l,t)*.5;lc.fillStyle=`rgb(${l.color})`;lc.fillRect(l.x-3,l.y-3,6,4);}
  lc.restore();pc.drawImage(lightCanvas,0,0,size,size,left,top,size*2,size*2);
 }
