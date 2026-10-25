@@ -1844,6 +1844,10 @@ function connectionAt(x,y,side){return lifeConnections.find(q=&gt;q[side]?.x===x
 function lifeMark(x,y,q){x=Math.round(x/2)*2;y=Math.round(y/2)*2;rect(x,y,12,6,q.color);for(let i=0;i&lt;q.mark;i++)rect(x+i*4,y+2,2,2,&#x27;#c4bba0&#x27;);}
 
 let itemTime=0,itemFrameKey=&#x27;&#x27;;
+const ANIMATION_FPS=Object.freeze({default:8,steam:6,cloth:6,leaves:6,paperFlutter:4,needle:4});
+const sampleTime=(time,fps)=&gt;Math.floor(time*fps)/fps;
+const itemFrameStamp=()=&gt;[8,6,4].map(fps=&gt;Math.floor(itemTime*fps)).join(&#x27;:&#x27;);
+let cameraPaints=0;
 // Keep the scene on one raster path when snapshots/readbacks are requested.
 const c=scene.getContext(&#x27;2d&#x27;,{willReadFrequently:true});c.imageSmoothingEnabled=false;
 // Static material drawing and runtime light rendering share a two-world-pixel grid.
@@ -1912,6 +1916,7 @@ function intensity(l,t){
  return .84+.16*wave;
 }
 function runtimeLight(t=lightTime){
+ t=sampleTime(t,ANIMATION_FPS.default); // Light, reflections and shadows share the source animation pose.
  const started=performance.now();
  pc.globalCompositeOperation=&#x27;source-over&#x27;;pc.globalAlpha=1;pc.drawImage(lighting.ambient?baseCanvas:dimCanvas,0,0);
  if(lighting.ambient){pc.fillStyle=&#x27;rgba(5,10,18,.13)&#x27;;pc.fillRect(0,0,pixelCanvas.width,pixelCanvas.height);}
@@ -1953,16 +1958,18 @@ function startLighting(){
  root.querySelector(&#x27;[data-action=lights-power]&#x27;).addEventListener(&#x27;click&#x27;,()=&gt;{lighting.ambient=!lighting.ambient;runtimeLight();lightControls();paint();remember();});
  root.querySelector(&#x27;[data-action=items-motion]&#x27;).addEventListener(&#x27;click&#x27;,()=&gt;{objectMotion.running=!objectMotion.running;lightControls();paint();remember();});
  matchMedia(&#x27;(prefers-reduced-motion: reduce)&#x27;).addEventListener(&#x27;change&#x27;,e=&gt;{if(e.matches){lighting.running=false;objectMotion.running=false;lightControls();paint();}});
- let previous=0,visible=true;
+ let previous=0,visible=true,lastAnimationKey=&#x27;&#x27;;
  new IntersectionObserver(entries=&gt;{visible=entries[0].isIntersecting;}).observe(root);
  function tick(now){
   requestAnimationFrame(tick);
   if(!previous){previous=now;return;}
-  const dt=now-previous;if(dt&lt;1000/24)return;previous=now;
+  const dt=now-previous;previous=now;
   if(!root.isConnected||!visible||document.hidden||(!lighting.running&amp;&amp;!objectMotion.running))return;
   const elapsed=Math.min(dt/1000,.1);
   if(lighting.running&amp;&amp;lighting.enabled)lightTime+=elapsed;
   if(objectMotion.running)itemTime+=elapsed;
+  const key=Math.floor(lightTime*ANIMATION_FPS.default)+&#x27;:&#x27;+itemFrameStamp();
+  if(key===lastAnimationKey)return;lastAnimationKey=key;
   runtimeLight();paint();
  }
  lightControls();requestAnimationFrame(tick);
@@ -1970,7 +1977,7 @@ function startLighting(){
 
 function addItemEffect(type,options){
  const phase=rand(options.x*7+options.y*11+itemEffects.length*19)*Math.PI*2;
- const effect={type,phase,clip:activeRoom?{...activeRoom}:null,...options};itemEffects.push(effect);return effect;
+ const effect={type,phase,fps:ANIMATION_FPS[type]??ANIMATION_FPS.default,clip:activeRoom?{...activeRoom}:null,...options};itemEffects.push(effect);return effect;
 }
 function itemPoly(points,color,alpha=1){
  ic.globalAlpha=alpha;ic.fillStyle=color;ic.beginPath();points.forEach(([x,y],i)=&gt;i?ic.lineTo(Math.round(x/2)*2,Math.round(y/2)*2):ic.moveTo(Math.round(x/2)*2,Math.round(y/2)*2));ic.closePath();ic.fill();
@@ -2035,11 +2042,11 @@ const ITEM_DRAW={
  }
 };
 function renderItems(){
- const frame=Math.floor(itemTime*12),key=`${frame}:${lighting.ambient}`;if(key===itemFrameKey)return;itemFrameKey=key;
+ const key=`${itemFrameStamp()}:${lighting.ambient}`;if(key===itemFrameKey)return;itemFrameKey=key;
  ic.setTransform(1,0,0,1,0,0);ic.clearRect(0,0,itemCanvas.width,itemCanvas.height);ic.save();ic.scale(1/pixelSize,1/pixelSize);
  for(const o of itemEffects){
   ic.save();if(o.clip){ic.beginPath();ic.rect(o.clip.x,o.clip.y,o.clip.w,o.clip.h);ic.clip();}
-  ITEM_DRAW[o.type](o,frame/12);ic.restore();
+  ITEM_DRAW[o.type](o,sampleTime(itemTime,o.fps));ic.restore();
  }
  ic.restore();
  // Moving material receives the same ambient tint and subsequent direct light as the static scene.
@@ -2702,14 +2709,22 @@ function compose(){
  streetLife();prepareShadows();pixelFinish();
 }
 try{compose();}catch(e){const el=root.querySelector(&#x27;[role=alert]&#x27;);el.hidden=false;el.textContent=e.stack;throw e;}
-function paint(){const width=Math.max(280,canvas.clientWidth),height=width/1.36,dpr=Math.min(2,devicePixelRatio||1);if(canvas.width!==Math.round(width*dpr)||canvas.height!==Math.round(height*dpr)){canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);}v.setTransform(dpr,0,0,dpr,0,0);v.imageSmoothingEnabled=false;const s=width/W*state.zoom;v.fillStyle=&#x27;#172b3d&#x27;;v.fillRect(0,0,width,height);v.drawImage(scene,width/2-state.x*s,height/2-state.y*s,W*s,H*s);if(showScale){v.save();v.translate(width/2-state.x*s,height/2-state.y*s);v.scale(s,s);paintScaleReferences();v.restore();}root.dataset.ready=&#x27;true&#x27;;root.dataset.seed=String(seed);const status=`种子 ${seed} · ${lighting.shadows?&#x27;实时阴影&#x27;:&#x27;阴影关闭&#x27;} · ${lighting.running?&#x27;灯光动画开启&#x27;:&#x27;灯光动画关闭&#x27;} · ${lighting.ambient?&#x27;环境光开启&#x27;:&#x27;环境光关闭&#x27;} · ${objectMotion.running?&#x27;物品动态开启&#x27;:&#x27;物品动态关闭&#x27;} · 可拖动查看`;if(root.querySelector(&#x27;[data-status]&#x27;).textContent!==status)root.querySelector(&#x27;[data-status]&#x27;).textContent=status;for(const b of root.querySelectorAll(&#x27;[data-view]&#x27;))b.setAttribute(&#x27;aria-pressed&#x27;,String(b.dataset.view===state.view));}
+function paint(){cameraPaints++;const width=Math.max(280,canvas.clientWidth),height=width/1.36,dpr=Math.min(2,devicePixelRatio||1);if(canvas.width!==Math.round(width*dpr)||canvas.height!==Math.round(height*dpr)){canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);}v.setTransform(dpr,0,0,dpr,0,0);v.imageSmoothingEnabled=false;const s=width/W*state.zoom;v.fillStyle=&#x27;#172b3d&#x27;;v.fillRect(0,0,width,height);v.drawImage(scene,width/2-state.x*s,height/2-state.y*s,W*s,H*s);if(showScale){v.save();v.translate(width/2-state.x*s,height/2-state.y*s);v.scale(s,s);paintScaleReferences();v.restore();}root.dataset.ready=&#x27;true&#x27;;root.dataset.seed=String(seed);const status=`种子 ${seed} · ${lighting.shadows?&#x27;实时阴影&#x27;:&#x27;阴影关闭&#x27;} · ${lighting.running?&#x27;灯光动画开启&#x27;:&#x27;灯光动画关闭&#x27;} · ${lighting.ambient?&#x27;环境光开启&#x27;:&#x27;环境光关闭&#x27;} · ${objectMotion.running?&#x27;物品动态开启&#x27;:&#x27;物品动态关闭&#x27;} · 可拖动查看`;if(root.querySelector(&#x27;[data-status]&#x27;).textContent!==status)root.querySelector(&#x27;[data-status]&#x27;).textContent=status;for(const b of root.querySelectorAll(&#x27;[data-view]&#x27;))b.setAttribute(&#x27;aria-pressed&#x27;,String(b.dataset.view===state.view));}
 root.querySelector(&#x27;[data-action=scale-reference]&#x27;).addEventListener(&#x27;click&#x27;,e=&gt;{showScale=!showScale;e.currentTarget.textContent=`人物参照［${showScale?&#x27;开启&#x27;:&#x27;关闭&#x27;}］`;e.currentTarget.setAttribute(&#x27;aria-pressed&#x27;,String(showScale));paint();});
 function remember(){window.openai?.setWidgetState?.({modelContent:{study:&#x27;standalone-shadow-lighting&#x27;,seed,view:state.view},privateContent:{camera:{...state},lighting:{...lighting},items:{...objectMotion,time:itemTime}}})?.catch(()=&gt;{});}
 root.querySelector(&#x27;[data-action=generate]&#x27;).addEventListener(&#x27;click&#x27;,()=&gt;{seed=(Math.imul(seed,1664525)+1013904223)&gt;&gt;&gt;0;compose();paint();remember();});
 root.querySelectorAll(&#x27;[data-view]&#x27;).forEach(b=&gt;b.addEventListener(&#x27;click&#x27;,()=&gt;{state=b.dataset.view===&#x27;street&#x27;?{view:&#x27;street&#x27;,x:650,y:661,zoom:1.75}:b.dataset.view===&#x27;roof&#x27;?{view:&#x27;roof&#x27;,x:650,y:279,zoom:1.7}:{view:&#x27;all&#x27;,x:640,y:470,zoom:1};paint();remember();}));
 let drag=null;canvas.addEventListener(&#x27;pointerdown&#x27;,e=&gt;{drag={x:e.clientX,y:e.clientY,cx:state.x,cy:state.y};canvas.setPointerCapture(e.pointerId);});canvas.addEventListener(&#x27;pointermove&#x27;,e=&gt;{if(!drag)return;const s=canvas.clientWidth/W*state.zoom;state.x=Math.max(W/(2*state.zoom),Math.min(W-W/(2*state.zoom),drag.cx-(e.clientX-drag.x)/s));state.y=Math.max(H/(2*state.zoom),Math.min(H-H/(2*state.zoom),drag.cy-(e.clientY-drag.y)/s));paint();});for(const k of [&#x27;pointerup&#x27;,&#x27;pointercancel&#x27;])canvas.addEventListener(k,()=&gt;{if(drag){drag=null;remember();}});
-window.addEventListener(&#x27;openai:set_globals&#x27;,e=&gt;{const s=e.detail?.globals?.widgetState;if(!s)return;if(Number.isInteger(s.modelContent?.seed)&amp;&amp;seed!==(s.modelContent.seed&gt;&gt;&gt;0)){seed=s.modelContent.seed&gt;&gt;&gt;0;compose();}if(s.privateContent?.camera)Object.assign(state,s.privateContent.camera);if(s.privateContent?.items){objectMotion.running=!!s.privateContent.items.running;if(Number.isFinite(s.privateContent.items.time))itemTime=Math.max(0,s.privateContent.items.time);runtimeLight();lightControls();}if(s.privateContent?.lighting){Object.assign(lighting,s.privateContent.lighting);runtimeLight();lightControls();}paint();});
-new ResizeObserver(paint).observe(canvas);paint();startLighting();window.BLOCK_STUDY={capture:()=&gt;scene.toDataURL(&#x27;image/png&#x27;),state:()=&gt;({...state,seed,showScale,items:{...objectMotion,time:itemTime},lighting:{...lighting},time:lightTime,frames:renderedFrames}),at:t=&gt;{lightTime=t;runtimeLight(t);paint();},pause:()=&gt;{lighting.running=false;objectMotion.running=false;lightControls();},itemAt:t=&gt;{itemTime=Math.max(0,t);runtimeLight();paint();},shadowKinds:kinds=&gt;{shadowFilter=kinds?new Set(kinds):null;runtimeLight();paint();},generate:s=&gt;{seed=s&gt;&gt;&gt;0;compose();paint();},plan:makeLayout,validate:validateLayout,connectionPlan:planLifeConnections,get stats(){return{connections:lifeConnections.map(q=&gt;({...q})),itemEffects:itemEffects.map(o=&gt;({...o})),details:detailItems.map(o=&gt;({...o})),itemFrame:Math.floor(itemTime*12),scale:{pixelsPerMetre:METRES,adultHeight:ADULT_HEIGHT,railHeight:RAIL_HEIGHT},props:placedProps,fixtures:fixtures.map(f=&gt;({...f})),references:scaleReferences(),sprites:count,lights:lights.length,width:W,height:H,seed,signs,layout,lightMs:lastLightMs,lightTypes:lights.map(l=&gt;l.type),occluders:occluders.reduce((a,o)=&gt;(a[o.type]=(a[o.type]||0)+1,a),{}),shadowFaces:lights.reduce((n,l)=&gt;n+shadowQuads(l,l.x,l.y).length,0)};}};
+window.addEventListener(&#x27;openai:set_globals&#x27;,e=&gt;{
+ const s=e.detail?.globals?.widgetState;if(!s)return;let needsLight=false;
+ if(Number.isInteger(s.modelContent?.seed)&amp;&amp;seed!==(s.modelContent.seed&gt;&gt;&gt;0)){seed=s.modelContent.seed&gt;&gt;&gt;0;compose();}
+ if(s.privateContent?.camera)Object.assign(state,s.privateContent.camera);
+ if(s.privateContent?.items){objectMotion.running=!!s.privateContent.items.running;const t=s.privateContent.items.time;if(Number.isFinite(t)&amp;&amp;itemTime!==Math.max(0,t)){itemTime=Math.max(0,t);needsLight=true;}}
+ if(s.privateContent?.lighting){const old=[lighting.enabled,lighting.ambient,lighting.shadows];Object.assign(lighting,s.privateContent.lighting);needsLight=needsLight||old.some((v,i)=&gt;v!==[lighting.enabled,lighting.ambient,lighting.shadows][i]);}
+ // Camera-state echoes should repaint the cached scene, not recompute its lighting.
+ if(needsLight)runtimeLight();lightControls();paint();
+});
+new ResizeObserver(paint).observe(canvas);paint();startLighting();window.BLOCK_STUDY={capture:()=&gt;scene.toDataURL(&#x27;image/png&#x27;),state:()=&gt;({...state,seed,showScale,items:{...objectMotion,time:itemTime},lighting:{...lighting},time:lightTime,frames:renderedFrames}),at:t=&gt;{lightTime=t;runtimeLight(t);paint();},pause:()=&gt;{lighting.running=false;objectMotion.running=false;lightControls();},itemAt:t=&gt;{itemTime=Math.max(0,t);runtimeLight();paint();},shadowKinds:kinds=&gt;{shadowFilter=kinds?new Set(kinds):null;runtimeLight();paint();},generate:s=&gt;{seed=s&gt;&gt;&gt;0;compose();paint();},plan:makeLayout,validate:validateLayout,connectionPlan:planLifeConnections,get stats(){return{connections:lifeConnections.map(q=&gt;({...q})),itemEffects:itemEffects.map(o=&gt;({...o})),details:detailItems.map(o=&gt;({...o})),itemFrame:Math.floor(itemTime*ANIMATION_FPS.default),animation:{defaultFps:ANIMATION_FPS.default,rates:{...ANIMATION_FPS},lightFrame:Math.floor(lightTime*ANIMATION_FPS.default),itemFrames:[8,6,4].map(fps=&gt;({fps,frame:Math.floor(itemTime*fps)})),cameraPaints},scale:{pixelsPerMetre:METRES,adultHeight:ADULT_HEIGHT,railHeight:RAIL_HEIGHT},props:placedProps,fixtures:fixtures.map(f=&gt;({...f})),references:scaleReferences(),sprites:count,lights:lights.length,width:W,height:H,seed,signs,layout,lightMs:lastLightMs,lightTypes:lights.map(l=&gt;l.type),occluders:occluders.reduce((a,o)=&gt;(a[o.type]=(a[o.type]||0)+1,a),{}),shadowFaces:lights.reduce((n,l)=&gt;n+shadowQuads(l,l.x,l.y).length,0)};}};
 })();
 &lt;/script&gt;
 
