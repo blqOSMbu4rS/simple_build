@@ -64,8 +64,7 @@
 </dialog>
 <dialog id="settings-dialog" aria-labelledby="settings-title">
   <div class="dialog-heading"><span class="eyebrow">游戏设置</span><button data-close="settings-dialog" aria-label="关闭设置与存档">✕</button></div><h2 id="settings-title">设置与存档</h2><p id="town-name">林边生长记</p><div class="settings-status-line"><span id="town-time"></span><span id="save-status">本地自动保存</span></div>
-  <section class="dialog-section"><h3>进度保存在这个浏览器</h3><p>小镇自动保存，刷新后暂停。导出文件可以留一份备份；旧版建造使用另一份独立记录。</p><div class="tool-row"><button id="export-save">导出进度</button><button id="import-save">导入进度</button><input id="import-file" type="file" accept=".json,application/json" hidden></div><p id="settings-status" role="status"></p></section>
-  <section class="dialog-section"><h3>旧版建造</h3><p><a href="./legacy.html">进入旧版建造 ↗</a></p></section>
+  <section class="dialog-section"><h3>进度保存在这个浏览器</h3><p>小镇自动保存，刷新后暂停。导出文件可以留一份备份。</p><div class="tool-row"><button id="export-save">导出进度</button><button id="import-save">导入进度</button><input id="import-file" type="file" accept=".json,application/json" hidden></div><p id="settings-status" role="status"></p></section>
   <section class="dialog-section"><h3>重新开始</h3><p>先在本地备份当前记录，再建立新小镇。旧版进度保持不变。</p><button id="new-game" class="danger-button">备份并重新开始</button></section>
 </dialog>
 <dialog id="debug-dialog" class="debug-dialog" aria-labelledby="debug-title">
