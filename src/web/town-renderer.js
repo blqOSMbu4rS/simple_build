@@ -74,7 +74,12 @@
   else if(pose.held)box(c,x+3,y-7,6,5,pose.held==='S'?'#8d9b96':pose.held==='C'?'#bc9b94':'#e0dec5');
   if(pose.hammer){const dy=Math.floor(time*7)%2*3;box(c,x+7,y-13+dy,2,8,'#b08d62');box(c,x+5,y-14+dy,7,3,'#a3b4ab');}
  }
- function viewRect(s,cfg,level='all',camera={}){const selected=cfg.view.levels.find(l=>l.id===level)||cfg.view.levels[0],base=selected.plot?[s.layout.anchor.x-16,152,160,136]:selected.rect,z=camera.zoom||1;return [base[0]+(camera.x||0)+(base[2]-base[2]/z)/2,base[1]+(camera.y||0)+(base[3]-base[3]/z)/2,base[2]/z,base[3]/z];}
+ function viewRect(s,cfg,level='all',camera={}){const selected=cfg.view.levels.find(l=>l.id===level)||cfg.view.levels[0],base=selected.plot?[s.layout.anchor.x-16,152,160,136]:selected.rect,z=camera.zoom||1,aspect=camera.aspect||base[2]/base[3],w=Math.max(base[2],base[3]*aspect)/z,h=w/aspect;return [base[0]+(camera.x||0)+(base[2]-w)/2,base[1]+(camera.y||0)+(base[3]-h)/2,w,h];}
+ function visitorVisible(p,selected,rect,overlays=[]){
+  if(selected.plot||selected.yRange&&(p.y<selected.yRange[0]||p.y>selected.yRange[1]))return false;
+  if(!rect)return true;const x=(p.x-rect[0])/rect[2],y=(p.y-rect[1])/rect[3];
+  return x>=0&&x<=1&&y>=0&&y<=1&&!overlays.some(b=>x>=b[0]&&x<=b[2]&&y>=b[1]&&y<=b[3]);
+ }
  function draw(canvas,s,cfg,level='all',camera={}){
   const c=canvas.getContext('2d'),E=root.TownGrowthEngine,v=cfg.view,selected=v.levels.find(l=>l.id===level)||v.levels[0],rect=viewRect(s,cfg,level,camera);
   c.imageSmoothingEnabled=false;c.clearRect(0,0,canvas.width,canvas.height);c.save();c.scale(canvas.width/rect[2],canvas.height/rect[3]);c.translate(-rect[0],-rect[1]);
@@ -93,7 +98,12 @@
   const ordered=cfg.parts.filter(p=>s.objects[p.id].status==='installed'&&visible(s.objects[p.id])).sort((a,b)=>(a.layer??2)-(b.layer??2)||a.y-b.y);
   for(const p of ordered){const o=s.objects[p.id];c.globalAlpha=E.roomAvailable(s,o.room,cfg)?1:.55;part(c,p,o,s.time);}c.globalAlpha=1;
   const garden=cfg.plans.find(p=>p.effect?.residents&&s.completed.some(q=>q.id===p.id));if(garden)for(let i=0;i<4;i++){const x=s.layout.anchor.x+15+i*11,y=251;box(c,x,y,2,5,'#83a776');box(c,x-1,y-2,4,3,s.gardenStyle?'#e9c88e':'#c99ca5');}
-  for(const event of s.interactions){const o=event.point;if(selected.yRange&&(o.y<selected.yRange[0]||o.y>selected.yRange[1]))continue;if(selected.rooms&&!selected.overview&&selected.plot)continue;box(c,o.x-5,o.y-5,10,8,event.type==='pickup'?'#c8ac72':event.type==='assist'?'#8ec4b6':'#c79eaa');c.fillStyle='#203a35';c.font='8px monospace';c.fillText(event.type==='pickup'?'+':'!',o.x-2,o.y+2);}
+  for(const event of [...s.interactionHistory.filter(e=>e.visitor&&e.resolvedAt+8>s.time),...s.interactions]){
+   const pose=E.visitorPose(s,event);if(pose.gone||!visitorVisible(pose,selected,rect,camera.overlays))continue;
+   const time=Math.floor(s.time*(pose.phase==='walk'?8:5))/(pose.phase==='walk'?8:5);
+   pet(c,{species:'cat',color:event.type==='pickup'?'#d3c39b':event.type==='assist'?'#8ec4b6':'#c79eaa'},pose,time);
+   if(pose.arrived){box(c,pose.x-4,pose.y-22+Math.floor(time*5)%2,8,5,'#eee0b7');box(c,pose.x-1,pose.y-20,2,2,'#405b48');}
+  }
   // Local lights have fixed positions and are evaluated from completed fixtures.
   for(const p of ordered.filter(p=>p.kind==='lamp')){c.globalAlpha=.12;box(c,p.x-9,p.y,30,22,'#ffd997');c.globalAlpha=1;part(c,p,s.objects[p.id],s.time);}
   const build=s.pets.find(p=>['install','dismantle','reuse','move'].includes(p.action?.type));
@@ -103,5 +113,5 @@
   c.restore();canvas.dataset.level=selected.id;canvas.dataset.installed=String(ordered.length);
  }
  function preview(canvas,s,cfg,id){const p=cfg.plans.find(p=>p.id===id),c=canvas.getContext('2d');c.clearRect(0,0,canvas.width,canvas.height);c.save();c.scale(canvas.width/120,canvas.height/96);for(const t of p.tasks){const partDef=cfg.parts.find(q=>q.id===t.target);if(partDef)part(c,partDef,{x:partDef.x+8,y:partDef.y-176},0);}c.restore();}
- root.TownGrowthRenderer={draw,part,names,viewRect,preview};
+ root.TownGrowthRenderer={draw,part,names,viewRect,visitorVisible,preview};
 })(globalThis);

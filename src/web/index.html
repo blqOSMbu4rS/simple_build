@@ -20,35 +20,20 @@
     <section class="landscape" aria-label="持久建筑群">
       <div class="scene-toolbar"><div><span class="status-dot" aria-hidden="true"></span><strong id="scene-name">我的小镇</strong></div><div class="views" id="views" role="group" aria-label="查看建筑群与楼层"></div><nav class="main-tools" aria-label="游戏菜单"><button id="open-help" title="玩法说明">帮助</button><button id="open-settings">设置</button><button id="open-debug" class="debug-trigger">Debug</button></nav></div>
       <div class="scene-hud"><section class="resource-strip" aria-label="可用材料，点击查看仓库"><div id="resource-cards" class="resource-cards"></div></section><div class="scene-controls" aria-label="施工控制"><button id="pause" class="play-button">暂停小镇</button><label title="施工速度"><span class="sr-only">施工速度</span><select id="speed"><option value="1">施工 ×1</option><option value="2">施工 ×2</option></select></label><label title="取材优先"><span class="sr-only">取材优先</span><select id="priority"><option value="auto">取材：自动</option><option value="W">优先木材</option><option value="S">优先石材</option></select></label></div></div><span id="debug-badge" class="debug-badge" hidden></span>
-      <div class="camera-tools"><button id="pan-left" aria-label="向左浏览">←</button><button id="camera-reset">复位</button><button id="pan-right" aria-label="向右浏览">→</button><button id="zoom-in" aria-label="放大场景">＋</button><button id="zoom-out" aria-label="缩小场景">−</button></div><div class="world"><canvas id="town-scene" width="960" height="528" aria-label="正面剖面小镇；宠物逐格施工、搬迁和生产"></canvas></div>
-      <div class="scene-caption"><span class="caption-label">小镇动态</span><span id="message" role="status">先建一间小屋，让来访的小伙伴安家。</span></div>
+      <div class="scene-management"><button id="project-badge" class="project-badge" aria-label="工程：可开工" aria-haspopup="dialog"><svg viewBox="0 0 48 48" aria-hidden="true"><circle class="badge-track" cx="24" cy="24" r="21"/><circle id="badge-ring" cx="24" cy="24" r="21"/><path d="M11 24 24 12 37 24M15 22V36H33V22M21 36V27H27V36"/></svg><span><strong id="badge-label">可开工</strong><small id="badge-progress">选择下一项</small></span><i id="project-notice" hidden aria-hidden="true"></i></button><nav class="management-tools" aria-label="小镇管理"><button id="open-extensions" data-tab="extensions"><span aria-hidden="true">▥</span>扩建</button><button id="tab-residents" data-tab="residents"><span aria-hidden="true">♟</span>居民 <small id="resident-count"></small></button><button id="tab-storage" data-tab="storage"><span aria-hidden="true">▣</span>仓库</button><button id="tab-rooms" data-tab="rooms"><span aria-hidden="true">⌂</span>房间</button></nav></div><div id="visitor-hints" class="visitor-hints" aria-label="镜头外的来访角色"></div><div id="visitor-bubbles" class="visitor-bubbles"></div><div class="camera-tools"><button id="pan-left" aria-label="向左浏览">←</button><button id="camera-reset">复位</button><button id="pan-right" aria-label="向右浏览">→</button><button id="zoom-in" aria-label="放大场景">＋</button><button id="zoom-out" aria-label="缩小场景">−</button></div><div class="world"><canvas id="town-scene" width="960" height="528" aria-label="正面剖面小镇；宠物逐格施工、搬迁和生产"></canvas></div>
+      <div class="scene-caption"><button id="open-journal" class="caption-label">小镇动态 ▴</button><span id="message" role="status">先建一间小屋，让来访的小伙伴安家。</span></div>
 
 
     </section>
 
-    <aside class="management" aria-label="小镇管理">
-      <div class="tabs" role="tablist" aria-label="小镇信息">
-        <button id="tab-projects" role="tab" aria-selected="true" aria-controls="panel-projects" data-tab="projects">工程</button>
-        <button id="tab-residents" role="tab" aria-selected="false" aria-controls="panel-residents" tabindex="-1" data-tab="residents">居民 <span id="resident-count"></span></button>
-        <button id="tab-storage" role="tab" aria-selected="false" aria-controls="panel-storage" tabindex="-1" data-tab="storage">仓库</button>
-        <button id="tab-rooms" role="tab" aria-selected="false" aria-controls="panel-rooms" tabindex="-1" data-tab="rooms">房间</button>
-      </div>
-      <section id="panel-projects" class="tab-panel" role="tabpanel" aria-labelledby="tab-projects">    <section class="goal-card" aria-label="当前目标">
-      <div class="section-heading"><span class="eyebrow" id="chapter-number">当前目标</span><span id="project-state" class="state-pill"></span></div>
-      <h2 id="project-title">为小伙伴建一个家</h2><p id="objective"></p>
-      <div class="next-step"><span>现在做什么</span><p id="next-action"></p></div>
-      <p id="project-status"></p><progress id="project-progress" aria-label="工程施工进度" hidden></progress>
-      <div id="project-needs" class="need-chips" aria-label="本工程剩余用料"></div>
-      <button class="primary" id="preview-project">查看图纸并开工 →</button>
-      <button id="cancel-project" class="text-button" hidden>取消尚未动工的工程</button>
-    </section><section class="idle-section"><h3>工程待办 · 最多三个</h3><div id="project-queue"></div><div id="queue-options"></div><p id="queue-wait" role="status"></p></section><section class="idle-section"><h3>林边互动</h3><div id="interactions"></div></section><section class="idle-section"><h3>扩展地块 · 三选一</h3><div id="extensions"></div></section><h3 class="route-title">成长路线</h3><ol id="roadmap" class="roadmap"></ol><details class="journal"><summary>最近发生的事</summary><ol id="event-log"></ol></details></section>
-      <section id="panel-residents" class="tab-panel" role="tabpanel" aria-labelledby="tab-residents" hidden><h3>一起生活的小伙伴</h3><p class="panel-intro">有床位就能入住，有工作设施才会生产。</p><div id="residents"></div></section>
-      <section id="panel-storage" class="tab-panel" role="tabpanel" aria-labelledby="tab-storage" hidden><h3>材料与家具</h3><p class="panel-intro">可用 = 仓内 + 营地料垛 + 回收箱。在途材料送达后才能使用。</p><div id="warehouse"></div><details class="storage-extra"><summary>营地与完整家具</summary><p id="yard-status"></p><p id="furniture-status"></p><div id="furniture-buttons" class="tool-row"></div><p class="panel-intro">转存不消耗材料，只腾出仓位；完整家具可留待图纸复用。</p></details></section>
-      <section id="panel-rooms" class="tab-panel" role="tabpanel" aria-labelledby="tab-rooms" hidden><h3>住处与工作空间</h3><p class="panel-intro">改建只调整需要变化的部分，保留原有结构。</p><div id="rooms"></div></section>
-    </aside>
+
   </div>
 
 <div id="toast" class="toast" role="status" hidden></div>
+<dialog id="management-dialog" aria-labelledby="management-title"><div class="dialog-heading"><h2 id="management-title">工程列表</h2><button data-close="management-dialog" aria-label="关闭管理窗口">✕</button></div><section id="panel-projects" class="tab-panel"><p class="panel-intro">选好图纸后直接开工，材料可以边采边建。工程完成后再来安排下一项。</p><div id="project-list"></div><p id="saved-queue" class="dialog-note"></p></section>      <section id="panel-residents" class="tab-panel" aria-labelledby="tab-residents" hidden><h3>一起生活的小伙伴</h3><p class="panel-intro">有床位就能入住，有工作设施才会生产。</p><div id="residents"></div></section>
+      <section id="panel-storage" class="tab-panel" aria-labelledby="tab-storage" hidden><h3>材料与家具</h3><p class="panel-intro">可用 = 仓内 + 营地料垛 + 回收箱。在途材料送达后才能使用。</p><div id="warehouse"></div><details class="storage-extra"><summary>营地与完整家具</summary><p id="yard-status"></p><p id="furniture-status"></p><div id="furniture-buttons" class="tool-row"></div><p class="panel-intro">转存不消耗材料，只腾出仓位；完整家具可留待图纸复用。</p></details></section>
+      <section id="panel-rooms" class="tab-panel" aria-labelledby="tab-rooms" hidden><h3>住处与工作空间</h3><p class="panel-intro">改建只调整需要变化的部分，保留原有结构。</p><div id="rooms"></div></section>
+<section id="panel-extensions" class="tab-panel" hidden><p class="panel-intro">三选一；动工前可以撤回选择，首次施工后锁定用途。</p><div id="extensions"></div></section><section id="panel-journal" class="tab-panel" hidden><ol id="event-log"></ol></section></dialog><dialog id="interaction-dialog" aria-labelledby="interaction-title"><div class="dialog-heading"><span class="eyebrow">林边来访</span><button data-close="interaction-dialog" aria-label="关闭互动详情">✕</button></div><h2 id="interaction-title"></h2><div id="interaction-detail"></div></dialog>
 <dialog id="project-dialog" aria-labelledby="preview-title">
   <div class="dialog-heading"><span class="eyebrow">工程图纸</span><button data-close="project-dialog" aria-label="关闭工程图纸">✕</button></div>
   <h2 id="preview-title"></h2><p id="preview-description"></p>
@@ -60,7 +45,7 @@
 </dialog>
 <dialog id="help-dialog" aria-labelledby="help-title">
   <div class="dialog-heading"><span class="eyebrow">第一次来到小镇</span><button data-close="help-dialog" aria-label="关闭玩法说明">✕</button></div><h2 id="help-title">你定目标，小伙伴来建造。</h2>
-  <ol class="guide"><li><strong>先看「当前目标」</strong><p>打开图纸，看看需要什么、会改变哪里，再确认开工。材料不足也能开始。</p></li><li><strong>看着小伙伴自动工作</strong><p>建造员会补采木石。居民有住处和工作设施后，会持续生产；不需要反复点击收集。</p></li><li><strong>完工后，再往前走一步</strong><p>新工程会在原有小屋上加层、扩建，或保留结构改建内部。居民、材料和旧建筑都会留下。</p></li></ol>
+  <ol class="guide"><li><strong>点击右上角「工程」</strong><p>打开工程列表与图纸，看看需要什么、会改变哪里，再确认开工。材料不足也能开始。</p></li><li><strong>看着小伙伴自动工作</strong><p>建造员会补采木石。居民有住处和工作设施后，会持续生产；不需要反复点击收集。</p></li><li><strong>完工后，再往前走一步</strong><p>新工程会在原有小屋上加层、扩建，或保留结构改建内部。居民、材料和旧建筑都会留下。</p></li></ol>
   <div class="help-grid"><p><strong>居民</strong>查看到访、工作和住处，空闲时安排床位。</p><p><strong>仓库</strong>查看缺料和来源，转存材料腾出仓位。</p><p><strong>房间</strong>查看空间是否可用，切换楼层近看。</p><p><strong>暂停与保存</strong>运行中的小镇关闭后最多结算 8 小时；主动暂停后不结算。</p></div><p class="dialog-note">菜单打开时小镇仍会运行；需要停下来时，先点击「暂停小镇」。</p><div class="dialog-actions"><button class="primary" data-close="help-dialog">明白了，去建小镇</button></div>
 </dialog>
 <dialog id="settings-dialog" aria-labelledby="settings-title">

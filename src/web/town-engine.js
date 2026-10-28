@@ -243,11 +243,20 @@
   for(const k of resources.filter(k=>c.interactions.commission[k])){const to=resources.find(q=>q!==k&&c.interactions.reward[q]);if(to)pool.push({type:'commission',input:{[k]:c.interactions.commission[k]},reward:{[to]:c.interactions.reward[to]},progress:0,clicks:0,point:{x:200,y:180}});}
   for(const r of recipes.filter(r=>r.facility))pool.push({type:'assist',recipe:r.id,assistKey:r.capability,input:{},reward:{},progress:0,clicks:3,point:{...facility(s,r,c).point}});
   s.eventRng=random(s.eventRng);const event=clone(pool[Math.floor(s.eventRng/4294967296*pool.length)]);if(!event)return;
-  s.interactions.push({...event,id:'interaction-'+s.nextInteraction++,status:event.clicks?'active':'ready',createdAt:s.time});
+  const camp=c.rooms.find(r=>r.initial).point,used=new Set(s.interactions.map(e=>e.visitor?.slot));
+  const slot=Array.from({length:c.interactions.slots},(_,i)=>i).find(i=>!used.has(i)),point={x:camp.x+slot*40,y:camp.y};
+  s.interactions.push({...event,point,id:'interaction-'+s.nextInteraction++,status:event.clicks?'active':'ready',createdAt:s.time,visitor:{slot,from:{x:camp.x-72,y:camp.y},arriveAt:s.time+10+slot*2}});
+ }
+ // Older idle events already waited at their saved points; no configuration or queue migration.
+ function visitorPose(s,e){
+  if(!e.visitor)return {...e.point,arrived:true,phase:'idle'};
+  const leaving=e.resolvedAt!==undefined,start=leaving?e.resolvedAt:e.createdAt,end=leaving?start+8:e.visitor.arriveAt;
+  const t=Math.max(0,Math.min(1,(s.time-start)/(end-start))),from=leaving?e.point:e.visitor.from,to=leaving?e.visitor.from:e.point;
+  return {x:from.x+(to.x-from.x)*t,y:from.y+(to.y-from.y)*t,arrived:!leaving&&t===1,phase:t<1?'walk':'idle',gone:leaving&&t===1};
  }
  function protectedCost(s,c){if(!s.project)return {};const busy=s.pets.some(p=>['install','dismantle','move','reuse'].includes(p.action?.type)),t=currentPlan(s,c)?.tasks.slice(s.project.at+Number(busy)).find(t=>t.type==='install');return t?data(c).parts.get(t.target).cost:{};}
  function interactionCheck(s,id,c=CONFIG.create()){
-  const e=s.interactions.find(e=>e.id===id);if(!e)return {error:'该互动已处理'};if(e.status!=='ready')return {error:'还需整理 '+(e.clicks-e.progress)+' 次'};
+  const e=s.interactions.find(e=>e.id===id);if(!e)return {error:'该互动已处理'};if(!visitorPose(s,e).arrived)return {error:'来访角色正在路上，到达后才可互动'};if(e.status!=='ready')return {error:'还需整理 '+(e.clicks-e.progress)+' 次'};
   if(e.type==='assist'&&(s.assists[e.assistKey]||0)>0)return {error:'同类协助尚有 '+s.assists[e.assistKey]+' 批，不能叠加'};
   const stock=inventory(s,c),protect=protectedCost(s,c),missing={};for(const[k,n]of Object.entries(e.input))if(stock[k]-(protect[k]||0)<n)missing[k]=n-Math.max(0,stock[k]-(protect[k]||0));
   if(Object.keys(missing).length)return {error:'保护下一项施工用料；尚差 '+Object.entries(missing).map(([k,n])=>c.materials[k]+' '+n).join('、')};
@@ -255,7 +264,7 @@
   const inStock=inventory(s,c,false),cap=capacity(s,c);for(const[k,n]of Object.entries(e.reward))if(inStock[k]+reserved(s,k)+n-(e.input[k]||0)>cap[k])return {error:'接收仓位不足，奖励保留待领取'};
   return {event:e};
  }
- function progressInteraction(s,id,c=CONFIG.create()){const e=s.interactions.find(e=>e.id===id);if(s.paused||!e||e.status!=='active')return false;e.progress=Math.min(e.clicks,e.progress+1);if(e.progress===e.clicks)e.status='ready';return true;}
+ function progressInteraction(s,id,c=CONFIG.create()){const e=s.interactions.find(e=>e.id===id);if(s.paused||!e||!visitorPose(s,e).arrived||e.status!=='active')return false;e.progress=Math.min(e.clicks,e.progress+1);if(e.progress===e.clicks)e.status='ready';return true;}
  function claimInteraction(s,id,c=CONFIG.create()){
   if(s.paused)return false;const check=interactionCheck(s,id,c);if(check.error){note(s,check.error);return false;}const e=check.event;
   const ids=claim(s,e.input,'processing',e.id,c);retire(s,ids,'consumed');for(const[k,n]of Object.entries(e.input))s.ledger.submitted[k]+=n;
@@ -263,7 +272,7 @@
   if(e.type==='assist')s.assists[e.assistKey]=c.interactions.assistBatches;
   s.interactionHistory.push({...clone(e),status:'claimed',resolvedAt:s.time});s.interactions=s.interactions.filter(q=>q!==e);s.nextEvent=Math.max(s.nextEvent,s.ticks+Math.round(c.interactions.interval/STEP));note(s,'互动已结算'+(e.type==='assist'?'：接下来三个批次作业效率 +10%。':'，材料已入仓。'));return true;
  }
- function abandonInteraction(s,id,c=CONFIG.create()){const e=s.interactions.find(e=>e.id===id);if(!e)return false;s.interactionHistory.push({...clone(e),status:'abandoned',resolvedAt:s.time});s.interactions=s.interactions.filter(q=>q!==e);s.nextEvent=Math.max(s.nextEvent,s.ticks+Math.round(c.interactions.interval/STEP));return true;}
+ function abandonInteraction(s,id,c=CONFIG.create()){const e=s.interactions.find(e=>e.id===id);if(s.paused||!e)return false;s.interactionHistory.push({...clone(e),status:'abandoned',resolvedAt:s.time});s.interactions=s.interactions.filter(q=>q!==e);s.nextEvent=Math.max(s.nextEvent,s.ticks+Math.round(c.interactions.interval/STEP));return true;}
  function tick(s,c,count=1){s.ticks+=count;s.time=s.ticks*STEP;
   for(const id of Object.keys(s.regrowth))s.regrowth[id]=Math.max(0,Math.round(s.regrowth[id]/STEP)-count)*STEP;
   for(const pet of s.pets){const a=pet.action;if(!a)continue;const rate=['install','dismantle','move','reuse'].includes(a.type)?s.multiplier:1;a.elapsedTicks+=count*rate;a.elapsed=Math.min(a.total,a.elapsedTicks*STEP);if(a.motion)a.motion.elapsed=a.elapsed;
@@ -283,6 +292,7 @@
   requireRule(s.layout&&same(s.layout,layout(c,s.layout.seed))&&Number.isSafeInteger(s.eventRng)&&s.eventRng>=0&&s.eventRng<4294967296&&Number.isSafeInteger(s.nextEvent)&&s.nextEvent>s.ticks&&Number.isSafeInteger(s.nextInteraction)&&s.nextInteraction>0&&[0,1].includes(s.gardenStyle),'随机或互动时钟损坏');
   requireRule(Number.isFinite(s.wallTime)&&s.wallTime>=0&&s.interactions.length<=c.interactions.slots&&new Set([...s.interactions,...s.interactionHistory].map(e=>e.id)).size===s.interactions.length+s.interactionHistory.length,'互动记录损坏');
   for(const e of [...s.interactions,...s.interactionHistory])requireRule(['pickup','commission','assist'].includes(e.type)&&['active','ready','claimed','abandoned'].includes(e.status)&&Number.isInteger(e.progress)&&e.progress>=0&&e.progress<=e.clicks&&Object.entries({...e.input,...e.reward}).every(([k,n])=>k in c.materials&&Number.isSafeInteger(n)&&n>=0)&&(e.type!=='assist'||d.recipes.get(e.recipe)?.capability===e.assistKey),'互动任务损坏');
+  for(const e of [...s.interactions,...s.interactionHistory])if(e.visitor)requireRule(Number.isInteger(e.visitor.slot)&&e.visitor.slot>=0&&e.visitor.slot<c.interactions.slots&&[e.createdAt,e.point?.x,e.point?.y,e.visitor.from?.x,e.visitor.from?.y,e.visitor.arriveAt].every(Number.isFinite)&&e.visitor.arriveAt>e.createdAt&&(e.resolvedAt===undefined||Number.isFinite(e.resolvedAt)&&e.resolvedAt>=e.createdAt),'来访路线损坏');
   for(const [id,n]of Object.entries(s.assists))requireRule(c.recipes.some(r=>r.capability===id)&&Number.isInteger(n)&&n>=0&&n<=c.interactions.assistBatches,'协助批次损坏');
   requireRule(s.pets.length===c.pets.length&&new Set(s.pets.map(p=>p.id)).size===s.pets.length&&s.pets.every(p=>c.pets.some(q=>q.id===p.id)),'宠物身份损坏');
   const actions=s.pets.map(p=>p.action).filter(Boolean),facilities=actions.map(a=>a.facility).filter(Boolean);requireRule(new Set(actions.map(a=>a.id)).size===actions.length&&new Set(facilities).size===facilities.length,'居民或设施重复占用');
@@ -326,6 +336,6 @@
  }
  function save(s,c=CONFIG.create()){validate(s,c);return JSON.stringify(s);}
  function restore(text,c=CONFIG.create()){requireRule(typeof text==='string'&&text.length<4000000,'存档过大');const s=JSON.parse(text);validate(s,c);return s;}
- const api={STEP,SAVE_KEY,currentPlan,capacity,efficiency,reserved,enqueue,reorderQueue,removeQueued,choose,cycleGarden,interactionCheck,progressInteraction,claimInteraction,abandonInteraction,stableRecipes,layout,create,advance,inventory,debugSetInventory,preview,startProject,cancelProject,assignHome,parkFurniture,stow,roomReady,roomAvailable,bedAvailable,comfort,actionPoint,workStatus,validate,validateConfig,save,restore};
+ const api={STEP,SAVE_KEY,visitorPose,currentPlan,capacity,efficiency,reserved,enqueue,reorderQueue,removeQueued,choose,cycleGarden,interactionCheck,progressInteraction,claimInteraction,abandonInteraction,stableRecipes,layout,create,advance,inventory,debugSetInventory,preview,startProject,cancelProject,assignHome,parkFurniture,stow,roomReady,roomAvailable,bedAvailable,comfort,actionPoint,workStatus,validate,validateConfig,save,restore};
  if(node)module.exports=api;else root.TownGrowthEngine=api;
 })(globalThis);
