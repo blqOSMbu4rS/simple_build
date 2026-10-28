@@ -57,14 +57,36 @@ const upRoof=row('up-roof','home',176,128,6,'roof','W',up.beam);
   addPlan(3,'③ 一层木作所','保留地基、梁柱、墙窗；完整搬出床与桌，拆隔断、换锯台。',['work'],[mk('move',bed.id),mk('move',table.id),...partition.map((p,i)=>mk('dismantle',p,{recover:i?0:1})),...basic.parts.map(p=>mk('dismantle',p,{recover:1})),...install([...saw.parts,sign])],[]);
   addPlan(4,'④ 织间与棉台','侧接纺织间，复用旧生活桌。种植台与织机只用木石。',[],[...install([...side.all,...bridge,...sideRoof,...loom.parts,...planter.parts,...line]),mk('reuse',table.id,{room:id('textile'),positions:[{x:368,y:240},{x:384,y:240}],supports:side.floor})],[]);
   addPlan(5,'⑤ 窗灯里的家','保留床架和住宅外壳；搬到营地过渡，添上自产布料。',['home'],install([...covers,...curtains,lamp]),[{pet:id('logger'),bed:id('bed-a-place')},{pet:id('weaver'),bed:id('bed-b-place')}]);
+  plans.forEach((p,i)=>{p.requires=i?[plans[i-1].id]:[];p.base=true;});
+  // Both plots have a grounded apron and an unobstructed ground-level entrance.
+  const anchors=[{id:id('east-plot'),x:496,y:256},{id:id('west-plot'),x:-128,y:256}];
+  const options=[
+   {key:'workshop',name:'木作扩展间',description:'现有木作岗位作业效率 +20%；运输与配方不变。',width:5,effect:{capability:'woodwork',efficiency:.2},decor:'saw'},
+   {key:'store',name:'储藏屋',description:'四种材料基础仓容量 ×4，可留出更长无人照看时间。',width:6,effect:{capacity:4},decor:'shelf'},
+   {key:'garden',name:'小花园',description:'已入住居民生产作业效率 +5%；两种花园摆设可切换。',width:4,effect:{residents:true,efficiency:.05,decorations:['garden-flowers','garden-lanterns']},decor:'planter'}
+  ];
+  for(const option of options){
+   const room='extension-'+option.key,n='extension-'+option.key;
+   const building=shell(n,room,0,256,option.width,[],true);
+   const top=row(n+'-roof',room,0,192,option.width,'roof','W',building.beam);
+   const furnishing=furniture(n+'-decor',room,16,240,option.decor,2,building.floor);
+   if(option.key==='garden')parts.filter(p=>building.walls.includes(p.id)).forEach(p=>{p.style.wall='#476956';p.kind='trellis';});
+   const ids=[...building.all,...top,...furnishing.parts];
+   parts.filter(p=>ids.includes(p.id)).forEach(p=>{p.plot=true;p.pixelRatio=30/16;});
+   if(option.key==='garden')parts.filter(p=>top.includes(p.id)).forEach(p=>{p.kind='pergola';});
+   const tasks=install(ids).map((t,i)=>({...t,id:id(n+'-task-'+i),deps:i?[id(n+'-task-'+(i-1))]:[]}));
+   plans.push({id:id(n),name:option.name,description:option.description,requires:plans.filter(p=>p.base).map(p=>p.id),base:false,choiceGroup:'extension',disable:[],settle:[],unlock:[],tasks,effect:option.effect,plotRoom:id(room)});
+  }
   return {
-   id:'forest-neighbourhood-v1',version:1,name:'林边生长记',materials:{W:'木材',S:'石材',Q:'棉花',C:'布料'},parts,groups,plans,
-   initial:{W:6,S:3,Q:0,C:0},capacity:{W:40,S:20,Q:8,C:12},furnitureCapacity:3,yardCapacity:12,salvageCapacity:9,
+   id:'forest-idle-v1',version:1,name:'林边生长记',materials:{W:'木材',S:'石材',Q:'棉花',C:'布料'},parts,groups,plans,anchors,
+   initial:{W:36,S:6,Q:0,C:0},capacity:{W:2100,S:600,Q:30,C:340},furnitureCapacity:3,yardCapacity:12,salvageCapacity:9,
+   interactions:{interval:75,slots:3,pickup:3,pickupKinds:['W','S','Q'],commission:{W:4,S:3},reward:{S:3,W:5},assistBatches:3,assistEfficiency:.1},
    rooms:[{id:id('camp'),name:'初始营地',initial:true,requirements:[],access:[],point:{x:64,y:272}},
     {id:id('work'),name:'一层 · 木作所',requirements:low.all,access:[low.door],point:{x:240,y:256}},
     {id:id('home'),name:'二层 · 双人住宅',route:[{x:280,y:272},{x:312,y:192},{x:264,y:192}],requirements:[...up.all,...upRoof],access:[...stairs,...landing,up.door],point:{x:224,y:192}},
     {id:id('textile'),name:'侧间 · 棉与织',requirements:[...side.all,...sideRoof],access:[...bridge,side.door],point:{x:352,y:256}},
-    {id:id('stairs'),name:'外楼梯',requirements:stairs,access:[],point:{x:296,y:224}}],
+    {id:id('stairs'),name:'外楼梯',requirements:stairs,access:[],point:{x:296,y:224}},
+    ...plans.filter(p=>p.choiceGroup).map(p=>({id:p.plotRoom,name:p.name,requirements:p.tasks.map(t=>t.target),access:[p.tasks.find(t=>parts.find(q=>q.id===t.target).kind==='door').target],point:{x:32,y:256},plot:true}))],
    beds:[{id:id('camp-builder'),room:id('camp'),point:{x:56,y:272},permanent:true},
     {id:id('camp-a'),room:id('camp'),point:{x:72,y:272},temporary:true},{id:id('camp-b'),room:id('camp'),point:{x:88,y:272},temporary:true},
     {id:id('bed-low'),room:id('work'),group:bed.id,point:{x:208,y:256}},
@@ -73,15 +95,16 @@ const upRoof=row('up-roof','home',176,128,6,'roof','W',up.beam);
     {id:id('logger'),name:'松松',species:'fox',color:'#d69362',capabilities:['woodwork'],arrival:0},
     {id:id('weaver'),name:'绒绒',species:'cat',color:'#b6bdcd',capabilities:['textile'],arrival:1}],
    recipes:[{id:id('gather-w'),name:'采木',capability:'wood-gather',input:{},output:{W:1},seconds:4,point:{x:120,y:272},buffer:8},
-    {id:id('gather-s'),name:'采石',capability:'stone-gather',input:{},output:{S:1},seconds:5,point:{x:448,y:272},buffer:6},
+    {id:id('gather-s'),name:'采石',capability:'stone-gather',input:{},output:{S:1},seconds:5,point:{x:448,y:272},buffer:600},
     {id:id('wood-basic-recipe'),name:'锯木',capability:'woodwork',facility:'wood-basic',input:{},output:{W:2},seconds:9,priority:10},
     {id:id('wood-full-recipe'),name:'精加工木材',capability:'woodwork',facility:'wood-full',input:{},output:{W:3},seconds:7,priority:20},
-    {id:id('harvest-recipe'),name:'采棉',capability:'textile',facility:'harvest',input:{},output:{Q:2},seconds:6,regrow:12,buffer:4,priority:5},
+    {id:id('harvest-recipe'),name:'采棉',capability:'textile',facility:'harvest',input:{},output:{Q:2},seconds:6,regrow:12,buffer:30,priority:5},
     {id:id('weave-recipe'),name:'织布',capability:'textile',facility:'weave',input:{Q:2},output:{C:1},seconds:7,priority:10}],
    bonus:{required:[...covers,...curtains,lamp],room:id('home'),multiplier:1.15},
    view:{size:[480,304],palette:{sky:'#243b44',haze:'#466269',ground:'#344b43',accent:'#efbc79'},levels:[{id:'all',overview:true,name:'建筑群总览',rect:[0,40,480,264]},
     {id:'lower',yRange:[190,304],name:'一层与侧间',rect:[144,168,304,120],rooms:[id('work'),id('textile'),id('stairs')]},
-    {id:'upper',yRange:[0,208],name:'二层住宅',rect:[160,112,176,112],rooms:[id('home'),id('stairs')]}]}
+    {id:'upper',yRange:[0,208],name:'二层住宅',rect:[160,112,176,112],rooms:[id('home'),id('stairs')]},
+    {id:'extension',name:'扩展地块',plot:true,rect:[480,152,160,136],rooms:plans.filter(p=>p.choiceGroup).map(p=>p.plotRoom)}]}
   };
  }
  const api={create};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.TownGrowthConfig=api;

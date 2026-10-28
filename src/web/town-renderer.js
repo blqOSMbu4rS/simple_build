@@ -26,7 +26,25 @@
    box(c,x+1,y,14,16,'#574738');for(let j=0;j<3;j++){box(c,x+1,y+j*5,14,2,'#a77e55');box(c,x+3,y+2+j*5,3,3,j%2?'#859385':'#bb946d');box(c,x+8,y+2+j*5,4,3,'#b79879');}
   }
  }
- function part(c,p,o,time){const {x,y}=o,st=p.style;
+ function extensionPart(c,p,o,time){
+  c.save();c.translate(o.x,o.y);c.scale(16/30,16/30);const st=p.style;
+  const b=(x,y,w,h,color)=>box(c,x,y,w,h,color);
+  switch(p.kind){
+   case 'trellis':b(3,0,2,30,'#789577');b(25,0,2,30,'#789577');for(let y=4;y<30;y+=8)b(3,y,24,2,'#789577');b(10,9,4,4,'#a6bc85');b(20,20,3,3,'#d1b991');break;
+   case 'pergola':b(0,18,30,3,'#a3a178');for(let x=1;x<30;x+=6)b(x,10,2,20,'#8d946c');break;
+   case 'floor':b(0,0,30,15,'#66766d');b(0,0,30,2,'#a6b2a0');b(2,7,12,1,'#4b5d53');b(17,10,10,1,'#4b5d53');break;
+   case 'post':b(10,0,11,30,st.wood);b(10,0,2,30,st.light);b(13,7,1,9,'#70543d');break;
+   case 'beam':b(0,15,30,15,st.wood);b(0,15,30,2,st.light);b(4,22,15,1,'#76563d');break;
+   case 'wall':case 'window':b(0,0,30,30,st.wall);for(let y=2;y<30;y+=7)b(0,y,30,1,'#718071');if(p.kind==='window'){b(3,3,24,24,'#a5b8a1');b(5,5,20,18,'#4c7779');b(7,6,5,6,'#9cbbab');b(14,4,2,21,'#d1b184');b(3,23,24,3,'#d1b184');}break;
+   case 'door':b(7,0,16,60,'#2d433c');b(4,0,3,60,'#c4a175');b(23,0,3,60,'#c4a175');b(4,0,22,3,'#d8bd89');break;
+   case 'roof':polygon(c,[[0,29],[4,10],[26,10],[30,29]],st.roof);for(let y=12;y<29;y+=5)b(4,y,22,1,'#8ba392');break;
+   case 'furniture':
+    if(p.art.type==='planter'){b(0,18,30,12,'#987958');b(2,17,26,2,'#d2ae7b');b(12,2,2,17,'#709c72');b(5,5,8,5,'#9ab584');b(14,2,9,5,'#91aa79');b(7,3,4,4,'#d5b58c');}
+    else if(p.art.type==='shelf'){b(2,0,26,30,'#65523f');for(let y=2;y<29;y+=9){b(2,y,26,2,'#c3a176');b(5,y+3,7,5,'#a7b09a');b(17,y+3,7,5,'#d1b88a');}}
+    else{b(0,9,30,5,'#c5a06c');b(4,14,4,16,'#95704b');b(23,14,4,16,'#95704b');b(10,3,15,4,'#95aaa1');}break;
+  }c.restore();
+ }
+ function part(c,p,o,time){if(p.pixelRatio)return extensionPart(c,p,o,time);const {x,y}=o,st=p.style;
   switch(p.kind){
    case 'floor':box(c,x,y,16,8,p.cost.S?'#67746c':st.wood);box(c,x,y,16,2,p.cost.S?'#99a298':st.light);box(c,x+1,y+5,8,1,'#48554e');break;
    case 'post':box(c,x+5,y,6,16,st.wood);box(c,x+5,y,2,16,st.light);box(c,x+10,y+2,1,5,'#634c3a');break;
@@ -56,12 +74,15 @@
   else if(pose.held)box(c,x+3,y-7,6,5,pose.held==='S'?'#8d9b96':pose.held==='C'?'#bc9b94':'#e0dec5');
   if(pose.hammer){const dy=Math.floor(time*7)%2*3;box(c,x+7,y-13+dy,2,8,'#b08d62');box(c,x+5,y-14+dy,7,3,'#a3b4ab');}
  }
- function draw(canvas,s,cfg,level='all'){
-  const c=canvas.getContext('2d'),E=root.TownGrowthEngine,v=cfg.view,selected=v.levels.find(l=>l.id===level)||v.levels[0],rect=selected.rect;
+ function viewRect(s,cfg,level='all',camera={}){const selected=cfg.view.levels.find(l=>l.id===level)||cfg.view.levels[0],base=selected.plot?[s.layout.anchor.x-16,152,160,136]:selected.rect,z=camera.zoom||1;return [base[0]+(camera.x||0)+(base[2]-base[2]/z)/2,base[1]+(camera.y||0)+(base[3]-base[3]/z)/2,base[2]/z,base[3]/z];}
+ function draw(canvas,s,cfg,level='all',camera={}){
+  const c=canvas.getContext('2d'),E=root.TownGrowthEngine,v=cfg.view,selected=v.levels.find(l=>l.id===level)||v.levels[0],rect=viewRect(s,cfg,level,camera);
   c.imageSmoothingEnabled=false;c.clearRect(0,0,canvas.width,canvas.height);c.save();c.scale(canvas.width/rect[2],canvas.height/rect[3]);c.translate(-rect[0],-rect[1]);
-  box(c,0,0,480,304,v.palette.sky);box(c,0,185,480,87,v.palette.haze);
-  for(let i=0;i<21;i++)tree(c,i*29-15,265,38+(i%5)*9,s.time);
-  box(c,0,272,480,32,v.palette.ground);box(c,0,272,480,2,'#72836a');for(let i=0;i<90;i++)box(c,(i*37)%480,276+(i*11)%24,3,1,i%2?'#405747':'#4a6350');
+  box(c,-800,-400,2200,1100,v.palette.sky);box(c,-800,185,2200,87,['#466269','#4d6260','#495b69'][s.layout.palette]);
+  for(const item of s.layout.environment)if(item.type==='tree')tree(c,item.x,item.y,item.size,s.time);;
+  box(c,-800,272,2200,400,v.palette.ground);box(c,-800,272,2200,2,'#72836a');
+  for(const item of s.layout.environment)if(item.type==='grass')box(c,item.x,item.y,4,2,'#6a8665');else if(item.type==='stone')box(c,item.x,item.y,7,3,'#73867a');
+  c.strokeStyle='#8f9981';c.setLineDash([3,3]);c.strokeRect(s.layout.anchor.x-4,270,108,4);c.setLineDash([]);
   // Permanent camp and short forest paths are scenery, never an instant finished house.
   polygon(c,[[34,270],[60,240],[85,270]],'#a28f6d');polygon(c,[[60,240],[60,270],[78,270]],'#716c56');box(c,56,258,9,14,'#39463a');
   for(let i=0;i<4;i++)box(c,90+i*21,274,14,2,'#9d967c');
@@ -71,6 +92,8 @@
   const visible=o=>!selected.rooms||selected.rooms.includes(o.room);
   const ordered=cfg.parts.filter(p=>s.objects[p.id].status==='installed'&&visible(s.objects[p.id])).sort((a,b)=>(a.layer??2)-(b.layer??2)||a.y-b.y);
   for(const p of ordered){const o=s.objects[p.id];c.globalAlpha=E.roomAvailable(s,o.room,cfg)?1:.55;part(c,p,o,s.time);}c.globalAlpha=1;
+  const garden=cfg.plans.find(p=>p.effect?.residents&&s.completed.some(q=>q.id===p.id));if(garden)for(let i=0;i<4;i++){const x=s.layout.anchor.x+15+i*11,y=251;box(c,x,y,2,5,'#83a776');box(c,x-1,y-2,4,3,s.gardenStyle?'#e9c88e':'#c99ca5');}
+  for(const event of s.interactions){const o=event.point;if(selected.yRange&&(o.y<selected.yRange[0]||o.y>selected.yRange[1]))continue;if(selected.rooms&&!selected.overview&&selected.plot)continue;box(c,o.x-5,o.y-5,10,8,event.type==='pickup'?'#c8ac72':event.type==='assist'?'#8ec4b6':'#c79eaa');c.fillStyle='#203a35';c.font='8px monospace';c.fillText(event.type==='pickup'?'+':'!',o.x-2,o.y+2);}
   // Local lights have fixed positions and are evaluated from completed fixtures.
   for(const p of ordered.filter(p=>p.kind==='lamp')){c.globalAlpha=.12;box(c,p.x-9,p.y,30,22,'#ffd997');c.globalAlpha=1;part(c,p,s.objects[p.id],s.time);}
   const build=s.pets.find(p=>['install','dismantle','reuse','move'].includes(p.action?.type));
@@ -79,5 +102,6 @@
   if(selected.overview){c.font='7px monospace';c.fillStyle='#c3c4ac';c.fillText('营地',44,288);c.fillText('木石料垛',92,288);}
   c.restore();canvas.dataset.level=selected.id;canvas.dataset.installed=String(ordered.length);
  }
- root.TownGrowthRenderer={draw,part,names};
+ function preview(canvas,s,cfg,id){const p=cfg.plans.find(p=>p.id===id),c=canvas.getContext('2d');c.clearRect(0,0,canvas.width,canvas.height);c.save();c.scale(canvas.width/120,canvas.height/96);for(const t of p.tasks){const partDef=cfg.parts.find(q=>q.id===t.target);if(partDef)part(c,partDef,{x:partDef.x+8,y:partDef.y-176},0);}c.restore();}
+ root.TownGrowthRenderer={draw,part,names,viewRect,preview};
 })(globalThis);

@@ -1,11 +1,12 @@
 (function(root){
  'use strict';
- const E=root.TownGrowthEngine,C=root.TownGrowthConfig.create(),R=root.TownGrowthRenderer,T=root.TownSessionClock;
+ const E=root.TownGrowthEngine,C=root.TownGrowthConfig.create(),R=root.TownGrowthRenderer,T=root.TownSessionClock,I=root.TownIdleTime;
  const $=id=>document.getElementById(id),key=E.SAVE_KEY,backupKey=key+':debug-backup';
  const clock=T.create(performance.now()),canvas=$('town-scene'),kinds=Object.keys(C.materials);
  const overview=C.view.levels.find(v=>v.overview)||C.view.levels[0];
  const parts=new Map(C.parts.map(p=>[p.id,p])),groups=new Map(C.groups.map(g=>[g.id,g])),rooms=new Map(C.rooms.map(r=>[r.id,r]));
  let s=null,raw=null,level=overview.id,loadError=null,lastSave=0,lastUI=0,saveError='',debugSpeed=1,activeTab='projects',busy=false,toastTimer;
+ let owner=false,ready=false,releaseLock=null;const camera={x:0,y:0,zoom:1};
  const names={preparing:'安排搬迁与设施停工',work:'逐件施工',settling:'居民入住验收',install:'搬运安装',dismantle:'拆解回收',move:'完整搬出家具',reuse:'复用家具',relocate:'搬迁中'};
  const zero=()=>Object.fromEntries(kinds.map(k=>[k,0]));
  const text=(id,value)=>{const el=$(id),next=String(value);if(el.textContent!==next)el.textContent=next;};
@@ -14,18 +15,26 @@
  const title=p=>p.name.replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '');
  const timeLabel=n=>Math.floor(n/60)+' : '+String(Math.floor(n%60)).padStart(2,'0');
  const roomName=home=>{const b=C.beds.find(b=>b.id===home);return b?rooms.get(b.room).name+(b.temporary?' · 临时铺位':''):'尚未入住';};
- const blocked=()=>!s||busy||clock.debt>=T.STEP;
+ const blocked=()=>!s||!owner||!ready||busy||clock.debt>=T.STEP;
  function toast(message){text('toast',message);$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4200);}
  function resetClock(){clock.debt=0;clock.previous=performance.now();lastSave=s?.time||0;}
- function restore(){try{raw=localStorage.getItem(key);s=raw?E.restore(raw,C):E.create(C);if(raw)s.paused=true;}catch(e){loadError=e.message;s=null;text('load-error-text',e.message);}$('load-error').hidden=!loadError;}
- function persist(){if(!s||loadError)return false;try{localStorage.setItem(key,E.save(s,C));lastSave=s.time;saveError='';return true;}catch(e){saveError='保存失败：'+e.message;return false;}}
- function capture(){T.capture(clock,performance.now(),!!s&&!s.paused&&!busy,debugSpeed);if(s&&!busy)T.pump(clock,s,{advance:(state,dt)=>E.advance(state,dt,C)},240);}
+ async function restore(){try{raw=localStorage.getItem(key);const original=raw?E.restore(raw,C):I.baseline(E.create(C,crypto.getRandomValues(new Uint32Array(1))[0]),Date.now());
+   if(owner){busy=true;s=original;text('ownership-banner','正在结算离开期间的小镇…');$('ownership-banner').hidden=false;refresh();
+    try{s=await I.settle(original,{E,c:C,storage:localStorage,owns:()=>owner,onProgress:(n,total)=>text('ownership-banner',`正在结算 ${Math.floor(n/60)} / ${Math.ceil(total/60)} 分钟…`)});}
+    catch(e){s=original;saveError='离线结算未保存，原记录保留：'+e.message;throw e;}
+    finally{busy=false;}
+    $('ownership-banner').hidden=true;ready=true;resetClock();if(s.lastOffline.seconds>=5)showOffline();
+   }else{s=original;text('ownership-banner','另一个标签页正在管理此小镇。本页只读；关闭另一页后刷新即可接管。');$('ownership-banner').hidden=false;}
+  }catch(e){loadError=e.message;text('load-error-text',e.message);ready=false;if(!raw)s=null;}$('load-error').hidden=!loadError;refresh();}
+ function persist(){if(!s||loadError||!owner||!ready||busy)return false;const old=s.wallTime;try{s.wallTime=Math.max(old,Date.now()-clock.debt/debugSpeed*1000);localStorage.setItem(key,E.save(s,C));lastSave=s.time;saveError='';return true;}catch(e){s.wallTime=old;saveError='保存失败：'+e.message;return false;}}
+ function capture(){T.capture(clock,performance.now(),!!s&&owner&&ready&&!s.paused&&!busy,debugSpeed);if(s&&owner&&ready&&!busy)T.pump(clock,s,{advance:(state,dt)=>E.advance(state,dt,C)},240);}
  function act(f){capture();if(blocked()){toast(busy?'正在完成调试操作，请稍候。':'正在补算小镇进度，请稍候再操作。');return;}const result=f();persist();refresh();return result;}
  function download(value,name){const a=el('a');a.href=URL.createObjectURL(new Blob([value],{type:'application/json'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
  function replaceState(next,backup){
+  if(!owner)throw Error('本页只读，不能写入小镇');I.baseline(next,Date.now());
   const encoded=E.save(next,C),original=s?E.save(s,C):raw;
   if(original!==null&&original!==undefined)localStorage.setItem(backup,original);
-  localStorage.setItem(key,encoded);s=next;raw=null;loadError=null;saveError='';resetClock();$('load-error').hidden=true;
+  localStorage.setItem(key,encoded);s=next;ready=true;raw=null;loadError=null;saveError='';resetClock();$('load-error').hidden=true;
  }
  function confirmAction(message){
   const dialog=$('confirm-dialog');text('confirm-message',message);dialog.returnValue='';
@@ -34,30 +43,30 @@
  async function restart(){
   capture();if(busy||clock.debt>=T.STEP){toast('正在处理进度，请稍候再开始新小镇。');return;}
   if(!await confirmAction('将当前记录另存备份，再开始一个新小镇？旧版建造的记录不受影响。'))return;
-  try{replaceState(E.create(C),key+':backup:'+Date.now());debugSpeed=1;level=overview.id;document.querySelectorAll('dialog[open]').forEach(d=>d.close());refresh();toast('已备份原记录，新小镇准备好了。');}
+  try{replaceState(E.create(C,crypto.getRandomValues(new Uint32Array(1))[0]),key+':backup:'+Date.now());ready=true;debugSpeed=1;level=overview.id;document.querySelectorAll('dialog[open]').forEach(d=>d.close());refresh();toast('已备份原记录，新小镇准备好了。');}
   catch(e){text('settings-status','未能建立新记录，原进度保留：'+e.message);if(loadError)text('load-error-text','未能备份，未覆盖原记录：'+e.message);toast('操作失败，原记录仍保留。');}
  }
  function setTab(name,focus=false){
   activeTab=name;for(const tab of document.querySelectorAll('[data-tab]')){const selected=tab.dataset.tab===name;tab.setAttribute('aria-selected',String(selected));tab.tabIndex=selected?0:-1;$(tab.getAttribute('aria-controls')).hidden=!selected;if(selected&&focus)tab.focus();}refresh();
  }
- function setView(id){level=id;for(const b of $('views').children)b.setAttribute('aria-pressed',String(b.dataset.level===level));if(s)R.draw(canvas,s,C,level);}
+ function setView(id){level=id;Object.assign(camera,{x:0,y:0,zoom:1});for(const b of $('views').children)b.setAttribute('aria-pressed',String(b.dataset.level===level));if(s)R.draw(canvas,s,C,level,camera);}
  function activity(pet){
   const a=pet.action;if(!a)return E.workStatus(s,pet,C);
   if(a.type==='production'){const r=C.recipes.find(r=>r.id===a.recipe);return r.name+(a.elapsed>=a.workEnd?' · 搬运交付':a.elapsed<2?' · 前往作业点':' · 作业中');}
   return names[a.type]||'工作中';
  }
  function remainingCost(){
-  const cost=zero(),plan=C.plans[s.completed.length];if(!plan)return cost;
+  const cost=zero(),plan=E.currentPlan(s,C);if(!plan)return cost;
   for(const t of plan.tasks.slice(s.project?.at||0))if(t.type==='install'&&!s.pets.some(p=>p.action?.type==='install'&&p.action.part===t.target))for(const [k,n]of Object.entries(parts.get(t.target).cost))cost[k]+=n;
   return cost;
  }
  function updateGoal(){
-  const p=s.project,plan=C.plans[s.completed.length],done=!plan,stock=E.inventory(s,C),need=remainingCost();
-  text('chapter-number',done?'我们的日常':`当前目标 · ${s.completed.length+1} / ${C.plans.length}`);
+  const p=s.project,plan=E.currentPlan(s,C),done=!plan,stock=E.inventory(s,C),need=remainingCost();
+  text('chapter-number',done?'我们的日常':plan.base?`基础工程 · ${C.plans.filter(p=>p.base&&s.completed.some(q=>q.id===p.id)).length+1} / 5`:'扩展地块工程');
   text('project-title',done?'小镇开始了日常':title(plan));text('objective',done?'每一位居民都有了住处，小伙伴们仍在继续生产。':plan.description);
   text('project-state',s.paused?'已暂停':p?'进行中':done?'已完成':'待开工');
   const builder=s.pets.find(p=>C.pets.find(d=>d.id===p.id).capabilities.includes('build'));
-  let hint=done?'看看居民和仓库，欣赏你一点点搭起来的小镇。':'点击下方查看图纸，确认安排后开工。材料不足也可以开始。';
+  let hint=done?'可在下方选择扩展地块，或查看居民与仓库。小镇会持续自动生产。':'点击下方查看图纸，确认安排后开工。材料不足也可以开始。';
   if(p){
    if(p.phase==='preparing')hint='小伙伴正在收尾当前批次并搬迁。安排完成后自动开始施工。';
    else if(p.phase==='settling')hint='施工已结束，正在安排居民入住。稍后会解锁下一项工程。';
@@ -97,7 +106,7 @@
  function updateResidents(){
   for(const row of $('residents').children){const pet=s.pets.find(p=>p.id===row.dataset.pet),def=C.pets.find(p=>p.id===pet.id),a=pet.action;
    row.setAttribute('aria-disabled',String(!pet.arrived));row.querySelector('.home').textContent=pet.arrived?'住处：'+roomName(pet.home):'尚未到访 · 完成前置工程后加入';
-   const bonus=E.comfort(s,pet,C);row.querySelector('.activity').textContent=(s.paused?'已暂停 · ':'')+activity(pet)+(bonus>1?' · 住宅效率 +'+Math.round((bonus-1)*100)+'%':'');
+   const recipe=a?.recipe?C.recipes.find(r=>r.id===a.recipe):E.stableRecipes(s,C).filter(r=>r.facility&&def.capabilities.includes(r.capability)).sort((a,b)=>(b.priority||0)-(a.priority||0))[0],bonus=recipe?(a?.efficiency||E.efficiency(s,pet,recipe,C)):1;row.querySelector('.activity').textContent=(s.paused?'已暂停 · ':'')+activity(pet)+(bonus>1?' · 岗位作业效率 +'+Math.round((bonus-1)*100)+'%（运输不变）':'');
    const select=row.querySelector('select');
    if(document.activeElement!==select){const opts=C.beds.filter(b=>!b.permanent&&E.bedAvailable(s,b,C)&&!s.pets.some(p=>p!==pet&&(p.home===b.id||p.action?.bed===b.id))),sig=opts.map(b=>b.id).join('|')+'|'+pet.home;
     if(select.dataset.signature!==sig){select.replaceChildren();const option=el('option','','选择一个可用床位');option.value='';select.append(option);for(const b of opts){const o=el('option','',roomName(b.id)+' · 床位 '+(C.beds.indexOf(b)+1));o.value=b.id;select.append(o);}select.value=pet.home||'';select.dataset.signature=sig;}}
@@ -107,9 +116,9 @@
  }
  function updateStorage(){
   const stock=E.inventory(s,C,false),available=E.inventory(s,C),need=remainingCost(),yardUsed=s.materials.filter(m=>m.state==='yard').length;
-  for(const row of $('warehouse').children){const k=row.dataset.kind,extra=available[k]-stock[k],incoming=s.pets.reduce((n,p)=>n+(p.action?.type==='production'?(p.action.output[k]||0):0),0);
-   row.querySelector('b').textContent=`${stock[k]} / ${C.capacity[k]}`;row.querySelector('.stock-meter span').style.width=(stock[k]/C.capacity[k]*100)+'%';
-   row.querySelector('.stock-detail').textContent=`仓外暂存 ${extra} · 生产批次待交付 ${incoming} · 合计可用 ${available[k]}`;
+  const cap=E.capacity(s,C);for(const row of $('warehouse').children){const k=row.dataset.kind,extra=available[k]-stock[k],incoming=s.materials.filter(m=>m.kind===k&&['transit','transport'].includes(m.state)).length;
+   row.querySelector('b').textContent=`${stock[k]} / ${cap[k]}`;row.querySelector('.stock-meter span').style.width=(stock[k]/cap[k]*100)+'%';
+   row.querySelector('.stock-detail').textContent=`可用 ${available[k]} · 在途 ${incoming} · 批次预留 ${E.reserved(s,k)} · 仓外 ${extra}。${storageEstimate(k)}`;
    row.querySelector('.availability').textContent=need[k]?`本工程还有 ${need[k]} 份待领取${need[k]>available[k]?'，小伙伴会继续供料。':'，当前可用材料已够。'}`:'当前工程不缺这类材料，可留给后续建设。';
    const button=row.querySelector('button');button.disabled=blocked()||s.paused||!stock[k]||yardUsed>=C.yardCapacity;button.title=s.paused?'请先继续小镇':!stock[k]?'仓内暂无这类材料':yardUsed>=C.yardCapacity?'营地料垛已满':'最多转存 4 份，仍可用于施工和加工';
   }
@@ -128,17 +137,51 @@
   }
  }
  function updateRoadmap(){
-  for(const [i,row]of [...$('roadmap').children].entries()){row.className=i<s.completed.length?'complete':i===s.completed.length?'current':'locked';row.querySelector('.step-dot').textContent=i<s.completed.length?'✓':i+1;row.querySelector('small').textContent=i<s.completed.length?'已完成 · '+timeLabel(s.completed[i].time):i===s.completed.length?(s.project?'当前工程 · '+names[s.project.phase]:'已解锁 · 从上方图纸开始'):'完成上一项工程后解锁';}
+  for(const [i,row]of [...$('roadmap').children].entries()){const plan=C.plans.filter(p=>p.base)[i],record=s.completed.find(p=>p.id===plan.id),unlocked=plan.requires.every(id=>s.completed.some(p=>p.id===id));row.className=record?'complete':unlocked?'current':'locked';row.querySelector('.step-dot').textContent=record?'✓':i+1;row.querySelector('small').textContent=record?'已完成 · '+timeLabel(record.time):unlocked?'已解锁 · 可查看图纸或加入队列':'等待前置工程完成';}
   const sig=JSON.stringify(s.events);if($('event-log').dataset.signature!==sig){$('event-log').replaceChildren();for(const event of s.events)$('event-log').append(el('li','',timeLabel(event.time)+' · '+event.text));$('event-log').dataset.signature=sig;}
  }
- function debugLimit(state,k){return Math.max(0,C.capacity[k]-state.pets.reduce((n,p)=>n+(p.action?.output?.[k]||0),0));}
+ function storageEstimate(k){
+  const remaining=E.capacity(s,C)[k]-E.inventory(s,C,false)[k]-E.reserved(s,k);if(remaining<1)return '本批次仓位已满。';
+  if(s.project||s.queue.length||s.paused||Object.values(s.assists).some(n=>n>0))return '产速随施工、暂停或协助变化，暂不估计满仓时间。';
+  const recipes=E.stableRecipes(s,C).filter(r=>r.output[k]&&!Object.keys(r.input).length&&!r.regrow&&!r.buffer&&r.facility).sort((a,b)=>(b.priority||0)-(a.priority||0));
+  const r=recipes[0],worker=r&&s.pets.find(p=>p.home&&C.pets.find(d=>d.id===p.id).capabilities.includes(r.capability));
+  if(!r||!worker)return '产速或中间原料不稳定，暂不估计满仓时间。';
+  const rate=r.output[k]/(r.seconds/E.efficiency(s,worker,r,C)+4);return `约 ${Math.ceil(remaining/rate/60)} 分钟达到仓位门槛（岗位和住处持续可用、不施工或取用时）。`;
+ }
+ function showOffline(){const info=s.lastOffline;if(!info)return;const list=$('offline-summary');list.replaceChildren(el('p','',`实际补算 ${timeLabel(info.seconds)}${info.capped?' · 已达 8 小时上限，超出时间已舍弃':''}`));
+  for(const k of kinds)list.append(el('p','',`${C.materials[k]}：获得 ${info.gained[k]}，消耗 ${info.consumed[k]}，当前可用 ${info.inventory[k]}`));
+  list.append(el('p','','完成工程：'+(info.completed.join('、')||'无')),el('p','','当前状态：'+info.waiting));$('offline-dialog').showModal();
+ }
+ function updateIdle(){
+  const render=(id,sig,build)=>{const target=$(id);if(target.dataset.signature===sig)return;target.replaceChildren();build(target);target.dataset.signature=sig;};
+  const button=(label,fn,disabled=false)=>{const b=el('button','',label);b.disabled=disabled||blocked();b.onclick=()=>act(fn);return b;};
+  const signature=JSON.stringify([s.queue,s.completed.map(p=>p.id),s.project?.plan,s.project?.locked,s.selection,s.paused,blocked()]);
+  render('project-queue',signature,node=>{for(let i=0;i<3;i++){const id=s.queue[i],p=C.plans.find(p=>p.id===id),row=el('div','queue-row');row.append(el('span','',`${i+1}. ${p?p.name:'空闲待办位置'}`));if(p){row.append(button('移除',()=>toast(E.removeQueued(s,id,C)?'已移除待办':'后方工程依赖此项，请先移除后方工程。')));for(const delta of [-1,1]){const j=i+delta;row.append(button(delta<0?'↑':'↓',()=>{const ids=[...s.queue];[ids[i],ids[j]]=[ids[j],ids[i]];toast(E.reorderQueue(s,ids,C)?'已调整顺序':'此顺序不满足前置依赖。');},j<0||j>=s.queue.length));}}node.append(row);}});
+  render('queue-options',signature,node=>{for(const p of C.plans.filter(p=>p.base&&!s.completed.some(q=>q.id===p.id)&&p.id!==s.project?.plan&&!s.queue.includes(p.id))){const known=new Set([...s.completed.map(q=>q.id),s.project?.plan,...s.queue]),missing=p.requires.filter(id=>!known.has(id)),row=el('div','queue-candidate');row.append(el('small','',p.name+' · '+(missing.length?'前置：'+missing.map(id=>C.plans.find(q=>q.id===id).name).join('、'):'前置已满足（含队列前方）')),button('加入待办',()=>toast(E.enqueue(s,p.id,C)?'已加入，满足条件会自动开工。':'队列已满或前置条件未满足。'),missing.length>0||s.queue.length>=3));node.append(row);}});
+  text('queue-wait',s.queueWait||(!s.project&&s.queue.length?'待办将自动开工':!s.project?'等待玩家确认工程':'当前工程：'+C.plans.find(p=>p.id===s.project.plan).name));
+  const eventSig=JSON.stringify([s.interactions,s.assists,E.inventory(s,C),E.capacity(s,C),s.project?.at,s.paused,blocked()]);
+  render('interactions',eventSig,node=>{if(!s.interactions.length)node.append(el('p','panel-intro','小伙伴会按小镇时间带来互动；不领取也能完成全部工程。'));
+   for(const event of s.interactions){const row=el('article','interaction-card');row.dataset.event=event.id;const name={pickup:'拾取散落材料',commission:'居民委托',assist:'整理生产工具'}[event.type];row.append(el('strong','',name));
+    row.append(el('p','',event.type==='assist'?C.recipes.filter(r=>r.capability===event.assistKey).map(r=>r.name).join(' / ')+`：${event.progress} / ${event.clicks}，接下来三个批次作业效率 +10%`:'投入 '+formatCost(event.input)+' → 得到 '+formatCost(event.reward)));
+    const check=E.interactionCheck(s,event.id,C);row.append(el('small','',check.error||'可以结算 · 不会重复领取'));
+    row.append(button(event.status==='active'?'整理一次':'确认领取 / 提交',()=>event.status==='active'?E.progressInteraction(s,event.id,C):E.claimInteraction(s,event.id,C),s.paused||(event.status==='ready'&&!!check.error)),button('放弃',()=>E.abandonInteraction(s,event.id,C),s.paused));node.append(row);}
+   for(const [id,n]of Object.entries(s.assists))if(n)node.append(el('p','',C.recipes.filter(r=>r.capability===id).map(r=>r.name).join(' / ')+'协助：剩余 '+n+' 批'));});
+  render('extensions',signature+'|'+s.gardenStyle,node=>{if(!s.completed.length){node.append(el('p','panel-intro','完成第一项工程后可查看方案；五项基础工程后可选择。'));return;}
+   const finished=C.plans.filter(p=>p.base).every(p=>s.completed.some(q=>q.id===p.id));
+   for(const p of C.plans.filter(p=>p.choiceGroup)){const row=el('article','extension-card'),preview=el('canvas');preview.width=240;preview.height=192;preview.setAttribute('aria-label',p.name+'构件预览');R.preview(preview,s,C,p.id);const cost=E.preview(s,C,p.id).cost;
+    const done=s.completed.some(q=>q.id===p.id),locked=s.project?.plan===p.id&&s.project.locked;row.append(preview,el('strong','',p.name),el('p','',p.description),el('p','','材料：'+formatCost(cost)),el('small','','人员：现有建造伙伴逐件施工；效果使用现有岗位。动工后用途不可转换。'));
+    if(done)row.append(el('p','state-pill','已完工 · 效果生效'));else if(s.selection===p.id){row.append(el('p','',locked?'已动工锁定':'已选中；尚未动工可撤回'),button('加入待办',()=>E.enqueue(s,p.id,C),s.queue.includes(p.id)||s.project?.plan===p.id||s.queue.length>=3),button('撤回选择',()=>E.choose(s,null,C),locked));}
+    else row.append(button('选择此方案',()=>E.choose(s,p.id,C),!finished||!!s.selection));node.append(row);
+   }if(C.plans.some(p=>p.effect?.residents&&s.completed.some(q=>q.id===p.id)))node.append(button('切换花园摆设（仅外观）',()=>E.cycleGarden(s,C)));});
+ }
+ function debugLimit(state,k){return Math.max(0,E.capacity(state,C)[k]-state.pets.reduce((n,p)=>n+(p.action?.output?.[k]||0),0));}
  function updateDebug(){
   const disabled=blocked();for(const id of ['debug-speed','debug-set','debug-add','debug-fill','debug-validate','debug-material','debug-amount'])$(id).disabled=disabled;
   $('debug-minute').disabled=disabled||s?.paused;$('debug-finish').disabled=disabled||s?.paused||!s?.project;
-  let hasBackup=false;try{hasBackup=!!localStorage.getItem(backupKey);}catch{}$('debug-undo').disabled=busy||!hasBackup||clock.debt>=T.STEP;
+  let hasBackup=false;try{hasBackup=!!localStorage.getItem(backupKey);}catch{}$('debug-undo').disabled=blocked()||!hasBackup||clock.debt>=T.STEP;
   $('debug-speed').value=debugSpeed;if(!s){text('debug-state','没有可读取的小镇记录。请使用设置或错误提示恢复进度。');return;}
   const k=$('debug-material').value,stock=E.inventory(s,C,false),max=debugLimit(s,k);$('debug-amount').max=max;
-  text('debug-material-hint',`仓内 ${stock[k]} / ${C.capacity[k]}；在途批次预留 ${C.capacity[k]-max}。可设置范围 0～${max}，不会改变仓外材料。`);
+  text('debug-material-hint',`仓内 ${stock[k]} / ${E.capacity(s,C)[k]}；在途批次预留 ${E.capacity(s,C)[k]-max}。可设置范围 0～${max}，不会改变仓外材料。`);
   text('debug-time-hint',s.paused?'小镇已暂停。先关闭面板并继续小镇，再推进时间或工程。':!s.project?'当前没有施工工程。可以推进生产时间，或关闭面板后选择图纸。':'快速完成会补充材料并推进真实施工，只完成当前工程，不自动开启下一项。');
   text('debug-state',`模拟时间  ${timeLabel(s.time)}\n工程完成  ${s.completed.length} / ${C.plans.length}\n当前阶段  ${s.project?names[s.project.phase]+' · '+s.project.at:'无工程'}\n材料身份  ${s.materials.length} 个\n正在工作  ${s.pets.filter(p=>p.action).length} 位\n调试增加  ${formatCost(s.ledger.debug?.added||{})}\n调试移除  ${formatCost(s.ledger.debug?.removed||{})}`);
  }
@@ -146,15 +189,15 @@
   for(const id of ['pause','resume-town','speed','priority','export-save','new-game','preview-project'])$(id).disabled=blocked();
   if(!s){text('next-action','原记录暂时无法读取。请先使用上方恢复操作，或在设置中导入有效记录。');$('pause-banner').hidden=true;updateDebug();return;}
   const stock=E.inventory(s,C,false),available=E.inventory(s,C);
-  for(const k of kinds){text('stock-'+k,available[k]);text('stock-detail-'+k,`仓内 ${stock[k]}/${C.capacity[k]} · 暂存 ${available[k]-stock[k]}`);}
+  const cap=E.capacity(s,C);for(const k of kinds){text('stock-'+k,available[k]);text('stock-detail-'+k,`仓内 ${stock[k]}/${cap[k]} · 预留 ${E.reserved(s,k)}`);}
   text('town-time','小镇时间 '+timeLabel(s.time));text('pause',s.paused?'继续小镇':'暂停小镇');$('pause').setAttribute('aria-pressed',String(s.paused));$('pause-banner').hidden=!s.paused;
   $('speed').value=s.multiplier;$('priority').value=s.gatherPriority;const changed=!!s.ledger.debug;
   $('debug-badge').hidden=debugSpeed===1&&!changed;text('debug-badge',[debugSpeed!==1?'调试 ×'+debugSpeed:'',changed?'已修改材料':''].filter(Boolean).join(' · '));
   text('save-status',saveError||'本地自动保存');$('save-status').className=saveError?'save-warning':'';text('message',s.message);
   text('resident-count',s.pets.filter(p=>p.home).length+'/'+C.pets.length);
-  updateGoal();if(activeTab==='projects')updateRoadmap();if(activeTab==='residents')updateResidents();if(activeTab==='storage')updateStorage();if(activeTab==='rooms')updateRooms();
+  updateGoal();if(activeTab==='projects'){updateRoadmap();updateIdle();}if(activeTab==='residents')updateResidents();if(activeTab==='storage')updateStorage();if(activeTab==='rooms')updateRooms();
   if($('project-dialog').open)updatePreviewStock();if($('debug-dialog').open)updateDebug();
-  for(const b of $('views').children)b.setAttribute('aria-pressed',String(b.dataset.level===level));R.draw(canvas,s,C,level);
+  for(const b of $('views').children)b.setAttribute('aria-pressed',String(b.dataset.level===level));R.draw(canvas,s,C,level,camera);
  }
  async function debugMutation(label,mutate){
   capture();if(blocked())return;const before=E.save(s,C),candidate=E.restore(before,C);busy=true;text('debug-result',label+'中…');refresh();
@@ -173,22 +216,32 @@
    const stow=el('button','','转存最多 4 份到营地');stow.onclick=()=>act(()=>toast(E.stow(s,k,C)?'已转存，材料仍可用于施工和加工。':'暂无材料或营地料垛已满。'));row.append(stow);$('warehouse').append(row);
    const option=el('option','',C.materials[k]);option.value=k;$('debug-material').append(option);
   }
-  for(const p of C.plans){const li=el('li'),info=el('div');info.append(el('strong','',title(p)),el('small'));li.append(el('span','step-dot'),info);$('roadmap').append(li);}
+  for(const p of C.plans.filter(p=>p.base)){const li=el('li'),info=el('div');info.append(el('strong','',title(p)),el('small'));li.append(el('span','step-dot'),info);$('roadmap').append(li);}
   for(const def of C.pets){const row=el('div','resident');row.dataset.pet=def.id;const mark=el('span','pet-mark');mark.style.setProperty('--pet',def.color);mark.setAttribute('aria-hidden','true');const info=el('div'),name=el('div');name.append(el('strong','',def.name),el('span','pet-role',def.capabilities.includes('build')?'建造伙伴':C.recipes.filter(r=>def.capabilities.includes(r.capability)).map(r=>r.name).join(' / ')));
    const details=el('details'),select=el('select');select.setAttribute('aria-label','为'+def.name+'分配床位');select.onchange=()=>act(()=>toast(E.assignHome(s,def.id,select.value,C)?'已安排搬迁，小伙伴会自己过去。':'暂时无法搬迁，请检查床位与工作状态。'));details.append(el('summary','','安排住处'),select,el('p','home-hint'));info.append(name,el('p','home'),el('p','activity'),details);row.append(mark,info);$('residents').append(row);}
   for(const r of C.rooms){const row=el('article','room-card');row.dataset.room=r.id;const head=el('div','room-heading');head.append(el('strong','',r.name),el('span','state-pill'));const b=el('button','','查看所在区域');b.onclick=()=>{setView((C.view.levels.find(v=>v.rooms?.includes(r.id))||overview).id);};row.append(head,el('p','room-beds'),el('p','room-detail'),b);$('rooms').append(row);}
   for(const l of C.view.levels){const b=el('button','',l.name);b.dataset.level=l.id;b.setAttribute('aria-pressed',String(l.id===level));b.onclick=()=>setView(l.id);$('views').append(b);}
+  const redraw=()=>{if(s)R.draw(canvas,s,C,level,camera);};
+  const pan=delta=>{camera.x=Math.max(-700,Math.min(700,camera.x+delta));redraw();};
+  $('pan-left').onclick=()=>pan(-96);$('pan-right').onclick=()=>pan(96);$('camera-reset').onclick=()=>setView(level);
+  const zoom=delta=>{camera.zoom=Math.max(.75,Math.min(3,camera.zoom+delta));redraw();};$('zoom-in').onclick=()=>zoom(.25);$('zoom-out').onclick=()=>zoom(-.25);
+  canvas.tabIndex=0;canvas.style.touchAction='none';let pointer=null;
+  canvas.onpointerdown=e=>{pointer={id:e.pointerId,x:e.clientX,y:e.clientY,pan:camera.x,py:camera.y,drag:false};canvas.setPointerCapture(e.pointerId);};
+  canvas.onpointermove=e=>{if(!pointer||pointer.id!==e.pointerId)return;const dx=e.clientX-pointer.x,dy=e.clientY-pointer.y;if(Math.hypot(dx,dy)>5)pointer.drag=true;if(pointer.drag&&s){const rect=R.viewRect(s,C,level,camera),bounds=canvas.getBoundingClientRect();camera.x=pointer.pan-dx/bounds.width*rect[2];camera.y=pointer.py-dy/bounds.height*rect[3];redraw();}};
+  canvas.onpointerup=e=>{if(!pointer||pointer.id!==e.pointerId)return;const click=!pointer.drag;pointer=null;if(!click||blocked())return;const bounds=canvas.getBoundingClientRect(),rect=R.viewRect(s,C,level,camera),x=rect[0]+(e.clientX-bounds.left)/bounds.width*rect[2],y=rect[1]+(e.clientY-bounds.top)/bounds.height*rect[3],selected=C.view.levels.find(v=>v.id===level);
+   const event=s.interactions.find(q=>Math.abs(q.point.x-x)<9&&Math.abs(q.point.y-y)<10&&(!selected.yRange||q.point.y>=selected.yRange[0]&&q.point.y<=selected.yRange[1])&&!selected.plot);if(event)act(()=>event.status==='active'?E.progressInteraction(s,event.id,C):E.claimInteraction(s,event.id,C));};
+  canvas.onpointercancel=()=>{pointer=null;};canvas.onwheel=e=>{e.preventDefault();zoom(e.deltaY<0?.25:-.25);};canvas.onkeydown=e=>{if(['ArrowLeft','ArrowRight','+','-','Home'].includes(e.key)){e.preventDefault();if(e.key==='ArrowLeft')pan(-32);if(e.key==='ArrowRight')pan(32);if(e.key==='+')zoom(.25);if(e.key==='-')zoom(-.25);if(e.key==='Home')setView(level);}};
   const tabs=[...document.querySelectorAll('[data-tab]')];for(const [i,tab]of tabs.entries()){tab.onclick=()=>setTab(tab.dataset.tab);tab.onkeydown=e=>{let n;if(e.key==='ArrowRight')n=(i+1)%tabs.length;if(e.key==='ArrowLeft')n=(i+tabs.length-1)%tabs.length;if(e.key==='Home')n=0;if(e.key==='End')n=tabs.length-1;if(n!==undefined){e.preventDefault();setTab(tabs[n].dataset.tab,true);}};}
   for(const b of document.querySelectorAll('[data-close]'))b.onclick=()=>$(b.dataset.close).close();
   for(const [id,dialog]of [['open-help','help-dialog'],['open-settings','settings-dialog'],['open-debug','debug-dialog']])$(id).onclick=()=>{if(dialog==='debug-dialog'){if(s)$('debug-amount').value=E.inventory(s,C,false)[$('debug-material').value];updateDebug();}$(dialog).showModal();};
   $('pause').onclick=()=>act(()=>{s.paused=!s.paused;});$('resume-town').onclick=()=>act(()=>{s.paused=false;});
   $('speed').onchange=()=>act(()=>{s.multiplier=Number($('speed').value);});$('priority').onchange=()=>act(()=>{s.gatherPriority=$('priority').value;});
   $('preview-project').onclick=showPreview;$('close-preview').onclick=()=>$('project-dialog').close();
-  $('cancel-project').onclick=()=>act(()=>toast(E.cancelProject(s)?'工程已取消，原住处安排已恢复。':'已经动工，可暂停小镇但不能撤销施工。'));
+  $('cancel-project').onclick=()=>act(()=>toast(E.cancelProject(s,C)?'工程已取消，原住处安排已恢复。':s.message||'已经动工，只能暂停或继续。'));
   $('start-project').onclick=()=>act(()=>{const choices=Object.fromEntries([...$('moving-choices').querySelectorAll('select')].map(sel=>[sel.dataset.pet,sel.value]));const paused=s.paused;s.paused=false;if(E.startProject(s,C,choices)){$('project-dialog').close();toast('已开工，小伙伴会自动准备材料和施工。');}else{s.paused=paused;text('preview-error',s.message);}});
   $('export-save').onclick=()=>act(()=>{download(E.save(s,C),'little-town.json');text('settings-status','已导出当前进度。');});$('export-original').onclick=()=>download(raw||'','little-town-unreadable.json');
   $('new-game').onclick=restart;$('backup-restart').onclick=restart;
-  $('import-save').onclick=()=>{if(!busy)$('import-file').click();};
+  $('import-save').onclick=()=>{if(owner&&!busy)$('import-file').click();};
   $('import-file').onchange=async()=>{const file=$('import-file').files[0];$('import-file').value='';if(!file)return;try{if(file.size>=4000000)throw Error('文件过大');const next=E.restore(await file.text(),C);if(!await confirmAction('导入将替换当前小镇，原记录会先备份。是否继续？'))return;capture();if(busy||clock.debt>=T.STEP)throw Error('正在处理进度，请稍后重试');next.paused=true;replaceState(next,key+':before-import:'+Date.now());debugSpeed=1;refresh();text('settings-status','导入成功，原记录已备份。关闭面板后点击继续小镇。');}catch(e){text('settings-status','导入失败，未替换原记录：'+e.message);}};
   $('debug-speed').onchange=()=>act(()=>{const rate=Number($('debug-speed').value);debugSpeed=[1,10,30].includes(rate)?rate:1;text('debug-result','全局速度已设为 ×'+debugSpeed+'；暂停仍冻结模拟。');});
   $('debug-material').onchange=()=>{if(s)$('debug-amount').value=E.inventory(s,C,false)[$('debug-material').value];updateDebug();};
@@ -198,18 +251,21 @@
   $('debug-minute').onclick=()=>debugMutation('推进一分钟',state=>{if(state.paused)throw Error('小镇已暂停');E.advance(state,60,C);});
   $('debug-finish').onclick=()=>debugMutation('完成当前工程',async state=>{if(state.paused||!state.project)throw Error('需要一个正在运行的工程');let seconds=0;while(state.project&&seconds<3600){fill(state);E.advance(state,1,C);seconds++;if(seconds%30===0){text('debug-result',`正在补料与施工 · 已推进 ${seconds} 秒…`);await new Promise(resolve=>setTimeout(resolve,0));}}if(state.project)throw Error('工程仍被住处、家具容量或作业条件阻挡；未应用本次修改。');});
   $('debug-validate').onclick=()=>{try{capture();if(!s)throw Error('没有有效记录');E.validate(s,C);text('debug-result','检查通过：材料账本、对象身份、工程和床位状态一致。');}catch(e){text('debug-result','检查未通过：'+e.message);}};
-  $('debug-undo').onclick=async()=>{if(busy)return;if(!await confirmAction('恢复上次作弊前的备份？此后进度会被撤销，当前进度也会另存备份。'))return;try{capture();if(clock.debt>=T.STEP)throw Error('正在补算，请稍后重试');const next=E.restore(localStorage.getItem(backupKey),C);next.paused=true;replaceState(next,key+':before-debug-restore:'+Date.now());localStorage.removeItem(backupKey);debugSpeed=1;text('debug-result','已恢复作弊前的进度，小镇已暂停。');refresh();}catch(e){text('debug-result','未能恢复：'+e.message);}};
+  $('debug-undo').onclick=async()=>{if(busy||!owner||!ready)return;if(!await confirmAction('恢复上次作弊前的备份？此后进度会被撤销，当前进度也会另存备份。'))return;try{capture();if(clock.debt>=T.STEP)throw Error('正在补算，请稍后重试');const next=E.restore(localStorage.getItem(backupKey),C);next.paused=true;replaceState(next,key+':before-debug-restore:'+Date.now());localStorage.removeItem(backupKey);debugSpeed=1;text('debug-result','已恢复作弊前的进度，小镇已暂停。');refresh();}catch(e){text('debug-result','未能恢复：'+e.message);}};
  }
  // A fixed desktop game surface; smaller hosts scale the whole interface uniformly.
  function fitGame(){
+  if(document.documentElement.clientWidth<800){document.documentElement.style.setProperty('--game-scale','1');const viewport=document.querySelector('.game-viewport');viewport.style.width='100%';viewport.style.height='auto';return;}
   const scale=Math.min(1,document.documentElement.clientWidth/1280,document.documentElement.clientHeight/720);
   document.documentElement.style.setProperty('--game-scale',String(scale));
   const viewport=document.querySelector('.game-viewport');
   viewport.style.width=1280*scale+'px';viewport.style.height=720*scale+'px';
  }
  fitGame();window.addEventListener('resize',fitGame);
- setup();restore();refresh();
- document.addEventListener('visibilitychange',()=>{capture();persist();if(!document.hidden)refresh();});window.addEventListener('pagehide',()=>{capture();persist();});
- function frame(now){capture();if(s&&!document.hidden){if(!busy&&s.time-lastSave>=3)persist();if(now-lastUI>150){refresh();lastUI=now;}}requestAnimationFrame(frame);}requestAnimationFrame(frame);
- root.TownGrowthApp={get state(){return s;},config:C,refresh,save:persist,get view(){return level;},get catchingUp(){return clock.debt>=T.STEP;},get debugBusy(){return busy;}};
+ setup();refresh();
+ if(navigator.locks){navigator.locks.request(key+':writer',{ifAvailable:true},async lock=>{owner=!!lock;await restore();if(lock)await new Promise(resolve=>{releaseLock=resolve;});}).catch(e=>{text('ownership-banner','无法获得小镇写入锁：'+e.message);$('ownership-banner').hidden=false;});}
+ else{owner=false;restore();text('ownership-banner','浏览器不支持安全多标签页锁，请使用支持 Web Locks 的浏览器。');$('ownership-banner').hidden=false;}
+ document.addEventListener('visibilitychange',()=>{capture();persist();if(!document.hidden)refresh();});window.addEventListener('pagehide',()=>{capture();persist();owner=false;if(releaseLock)releaseLock();});window.addEventListener('pageshow',e=>{if(e.persisted)location.reload();});
+ function frame(now){capture();if(s&&!document.hidden){if(owner&&ready&&!busy&&s.time-lastSave>=3)persist();if(now-lastUI>150){refresh();lastUI=now;}}requestAnimationFrame(frame);}requestAnimationFrame(frame);
+ root.TownGrowthApp={get state(){return s;},config:C,refresh,save:persist,get view(){return level;},get camera(){return camera;},get owner(){return owner;},get ready(){return ready;},get catchingUp(){return busy||clock.debt>=T.STEP;},get debugBusy(){return busy;}};
 })(globalThis);
