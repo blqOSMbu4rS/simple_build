@@ -3,45 +3,39 @@
  'use strict';
  const node=typeof module!=='undefined'&&module.exports;
  const CONFIG=node?require('./town-config.js'):root.TownGrowthConfig;
- const MOT=node?require('./cutaway-motion.js'):root.TownCutawayMotion;
- const STEP=1/30,SAVE_KEY='desktop-build-town-idle-v1';
+ const L=node?require('./town-layout.js'):root.TownLayout;
+ const STEP=1/30,SAVE_KEY='desktop-build-town-modular-v1';
  const clone=v=>JSON.parse(JSON.stringify(v)),same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
  const index=new WeakMap();
  function data(c){if(!index.has(c))index.set(c,{parts:new Map(c.parts.map(p=>[p.id,p])),groups:new Map(c.groups.map(g=>[g.id,g])),rooms:new Map(c.rooms.map(r=>[r.id,r])),recipes:new Map(c.recipes.map(r=>[r.id,r])),beds:new Map(c.beds.map(b=>[b.id,b]))});return index.get(c);}
  const kinds=c=>Object.keys(c.materials),zero=c=>Object.fromEntries(kinds(c).map(k=>[k,0]));
  const requireRule=(ok,message)=>{if(!ok)throw Error(message);};
  function validateConfig(c){
-  requireRule(c&&c.version===1&&Array.isArray(c.parts)&&c.parts.length>0,'未知城镇配置');
-  for(const list of [c.parts,c.groups,c.rooms,c.beds,c.pets,c.recipes,c.plans])requireRule(new Set(list.map(p=>p.id)).size===list.length,'配置身份重复');
-  const d=data(c),validCost=a=>a&&Object.entries(a).every(([k,n])=>k in c.materials&&Number.isInteger(n)&&n>=0);
-  for(const k of kinds(c))requireRule(Number.isInteger(c.capacity[k])&&c.capacity[k]>=3&&Number.isInteger(c.initial[k])&&c.initial[k]>=0&&c.initial[k]<=c.capacity[k],'仓库配置错误');
-  requireRule(c.pets.filter(p=>p.capabilities.includes('build')).length===1,'首版需要一位独立建造员');
-  for(const p of c.parts)requireRule(d.rooms.has(p.room)&&validCost(p.cost)&&Object.values(p.cost).reduce((a,b)=>a+b,0)===1&&p.supports.every(id=>d.parts.has(id))&&[p.x,p.y,p.seconds].every(Number.isFinite)&&p.seconds>0,'施工格配置错误');
-  for(const g of c.groups)requireRule(g.parts.length>0&&new Set(g.parts).size===g.parts.length&&g.parts.every(id=>d.parts.get(id)?.group===g.id),'家具组配置错误');
-  for(const b of c.beds)requireRule(d.rooms.has(b.room)&&(!b.group||d.groups.has(b.group)),'床位配置错误');
-  for(const r of c.recipes)requireRule(validCost(r.input)&&validCost(r.output)&&r.seconds>0&&Object.values(r.output).some(n=>n>0),'生产配方错误');
-  const placed=new Set();
-  const knownPlans=new Set();for(const p of c.plans){requireRule(Array.isArray(p.requires)&&p.requires.every(id=>knownPlans.has(id)),'工程前置配置错误');knownPlans.add(p.id);const done=new Set();for(const t of p.tasks){requireRule(t.deps.every(id=>done.has(id)),'工程依赖错误');done.add(t.id);
-    requireRule(['install','dismantle','move','reuse'].includes(t.type),'未知拆装动作');
-    if(t.type==='install'){const part=d.parts.get(t.target);requireRule(part&&!placed.has(part.id)&&part.supports.every(id=>placed.has(id))&&(part.grounded||part.supports.length>0),'安装支撑链错误');placed.add(part.id);}
-    if(t.type==='dismantle'){requireRule(placed.has(t.target)&&![...placed].some(id=>id!==t.target&&d.parts.get(id).supports.includes(t.target)),'拆解破坏支撑链');placed.delete(t.target);}
-    if(t.type==='move'||t.type==='reuse'){const g=d.groups.get(t.target);requireRule(g,'未知家具');for(const id of g.parts){requireRule(t.type==='move'?placed.has(id):!placed.has(id),'家具重复拆装');if(t.type==='move')placed.delete(id);else placed.add(id);}if(t.type==='reuse')requireRule(t.positions?.length===g.parts.length&&d.rooms.has(t.room),'复用位置错误');}
-   }}
+  if(c.compiled)return true;
+  requireRule(c&&c.version===1&&c.templates?.length&&c.slots?.length,'未知城镇配置');
+  for(const list of [c.templates,c.slots,c.plans,c.pets,c.recipes])requireRule(new Set(list.map(p=>p.id)).size===list.length,'配置身份重复');
+  for(const t of c.templates){requireRule(Number.isInteger(t.limit)&&t.limit>0&&c.slots.filter(s=>s.template===t.id).length===t.limit,'实例限额配置错误');for(const v of t.variants){const ids=new Set(v.parts.map(p=>p.id));requireRule(ids.size===v.parts.length&&v.ports.every(p=>p.caps.every(n=>ids.has(n))),'模板连接区域错误');for(const p of v.parts)requireRule(p.supports.every(n=>ids.has(n))&&Object.values(p.cost).reduce((a,b)=>a+b,0)===1,'模板支撑或成本错误');}}
   return true;
  }
+ const scenes=new WeakMap();
+ function scene(s,c=CONFIG.create(),pending=null){
+  if(c.compiled)c=c.source;if(pending)return L.compile(c,s,pending);
+  const key=JSON.stringify([s.buildings,s.improvements]);let cached=scenes.get(s);if(!cached||cached.base!==c||cached.key!==key){cached={base:c,key,c:L.compile(c,s)};scenes.set(s,cached);}return cached.c;
+ }
+ function candidates(s,c,planId){if(s.project)return [];return L.candidates(c.compiled?c.source:c,s,planId);}
  function random(seed){return (Math.imul(seed,1664525)+1013904223)>>>0;}
  function layout(c,seed){let rng=random(Math.imul(seed^0x9e3779b9,0x85ebca6b));const next=()=>{rng=random(rng);return rng/4294967296;};
-  const anchor=clone(c.anchors[Math.floor(next()*c.anchors.length)]),palette=Math.floor(next()*3),environment=[];
+  const palette=Math.floor(next()*3),environment=[];
   for(let i=0;i<24;i++){const x=-180+i*36+Math.floor(next()*12),type=i%3===0?'stone':i%3===1?'grass':'tree';environment.push({x,y:type==='tree'?264:280+Math.floor(next()*12),type,size:35+Math.floor(next()*30)});}
-  return {version:1,seed:seed>>>0,anchor,palette,environment};
+  return {version:1,seed:seed>>>0,palette,environment};
  }
  function create(c=CONFIG.create(),seed=1){
-  validateConfig(c);const z=()=>zero(c);
-  const s={format:'town-idle',version:1,configVersion:c.version,scene:c.id,signature:JSON.stringify(c),layout:layout(c,seed),eventRng:random(seed^0x93ab12),nextEvent:Math.round(c.interactions.interval/STEP),nextInteraction:1,interactions:[],interactionHistory:[],assists:{},decorations:[],gardenStyle:0,queue:[],selection:null,queueWait:'',wallTime:0,lastOffline:null,ticks:0,time:0,remainder:0,paused:false,status:'running',multiplier:1,completed:[],project:null,nextMaterial:1,nextAction:1,
+  if(c.compiled)c=c.source;
+  validateConfig(c);const base=c,buildings=[{id:c.root.slot,template:c.slots.find(s=>s.id===c.root.slot).template,variant:c.templates.find(t=>t.id===c.slots.find(s=>s.id===c.root.slot).template).variants[0].id,x:c.root.x,y:c.root.y}];c=L.compile(c,{buildings,improvements:{},pets:[]});const z=()=>zero(c);
+  const s={format:'town-modular',version:1,configVersion:c.version,scene:c.id,signature:JSON.stringify(base),buildings,improvements:{},layout:layout(c,seed),eventRng:random(seed^0x93ab12),nextEvent:Math.round(c.interactions.interval/STEP),nextInteraction:1,interactions:[],interactionHistory:[],assists:{},decorations:[],gardenStyle:0,wallTime:0,lastOffline:null,ticks:0,time:0,remainder:0,paused:false,status:'running',multiplier:1,completed:[],project:null,nextMaterial:1,nextAction:1,
    objects:Object.fromEntries(c.parts.map(p=>[p.id,{id:p.id,status:'absent',x:p.x,y:p.y,room:p.room,supports:clone(p.supports),materials:[]}])) ,furniture:Object.fromEntries(c.groups.map(g=>[g.id,{id:g.id,status:'absent'}])),
    pets:c.pets.map(p=>({id:p.id,home:p.home||null,arrived:p.arrival===0,x:p.home?data(c).beds.get(p.home).point.x:136,y:272,action:null})),materials:[],
    ledger:{created:z(),consumed:z(),lost:z(),rewards:z(),submitted:z(),recipes:Object.fromEntries(c.recipes.map(r=>[r.id,{started:0,finished:0}]))},regrowth:Object.fromEntries(c.recipes.map(r=>[r.id,0])),gatherPriority:'auto',message:'先建一间小屋，让来访的小伙伴安家。',events:[]};
-  for(const p of c.parts.filter(p=>p.plot))s.objects[p.id].x+=s.layout.anchor.x;
   for(const k of kinds(c))mint(s,k,c.initial[k],'stock',null,'initial');return s;
  }
  function note(s,text){if(s.message===text)return;s.message=text;s.events.unshift({time:s.time,text});s.events.length=Math.min(s.events.length,16);}
@@ -66,15 +60,15 @@
  }
  const placed=(s,id)=>s.objects[id]?.status==='installed';
  const completed=(s,id)=>s.completed.some(p=>p.id===id);
- function currentPlan(s,c=CONFIG.create()){return c.plans.find(p=>p.id===s.project?.plan)||c.plans.find(p=>p.id===s.queue[0])||c.plans.find(p=>p.base&&!completed(s,p.id));}
+ function currentPlan(s,c=CONFIG.create()){return c.plans.find(p=>p.id===s.project?.plan)||c.plans.find(p=>p.base&&!completed(s,p.id));}
  function capacity(s,c=CONFIG.create()){const out=clone(c.capacity);for(const p of activeEffects(s,c))if(p.effect.capacity)for(const k of kinds(c))out[k]=c.capacity[k]*p.effect.capacity;return out;}
- function activeEffects(s,c){return c.plans.filter(p=>p.effect&&completed(s,p.id)&&roomAvailable(s,p.plotRoom,c));}
- function roomReady(s,id,c){const r=data(c).rooms.get(id);return !!r&&(r.initial||r.requirements.every(p=>placed(s,p))&&r.access.every(p=>placed(s,p)));}
+ function activeEffects(s,c){return c.plans.filter(p=>p.effect&&completed(s,p.id)&&roomAvailable(s,p.effectRoom,c));}
+ function roomReady(s,id,c){const r=data(c).rooms.get(id);return !!r&&(r.initial||r.requirements.every(p=>placed(s,p))&&r.access.every(p=>placed(s,p))&&(!r.connection||roomReady(s,r.connection.parent,c)));}
  const disabled=(s,id)=>!!s.project?.disabled&&s.project.affected.includes(id);
  const roomAvailable=(s,id,c)=>roomReady(s,id,c)&&!disabled(s,id);
  function groupReady(s,g){return s.furniture[g.id]?.status==='installed'&&g.parts.every(id=>placed(s,id));}
  function bedAvailable(s,b,c){return roomAvailable(s,b.room,c)&&(!b.group||groupReady(s,data(c).groups.get(b.group)));}
- function comfort(s,pet,c){const b=data(c).beds.get(pet.home);return b&&b.room===c.bonus.room&&bedAvailable(s,b,c)&&c.bonus.required.every(id=>placed(s,id))?c.bonus.multiplier:1;}
+ function comfort(s,pet,c){const b=data(c).beds.get(pet.home),bonus=c.bonus.find(x=>x.room===b?.room);return bonus&&bedAvailable(s,b,c)&&bonus.required.every(id=>placed(s,id))?bonus.multiplier:1;}
  function efficiency(s,pet,r,c){let bonus=comfort(s,pet,c)-1;for(const p of activeEffects(s,c))if(p.effect.residents&&pet.home&&bedAvailable(s,data(c).beds.get(pet.home),c)||p.effect.capability===r.capability)bonus+=p.effect.efficiency||0;return 1+bonus;}
  function reserved(s,k,except=null){return s.pets.reduce((n,p)=>n+(p.action&&p.action!==except&&!p.action.salvage?(p.action.output?.[k]||0):0),0);}
  function fits(s,output,c,except=null){const stock=inventory(s,c,false),cap=capacity(s,c);return Object.entries(output).every(([k,n])=>stock[k]+reserved(s,k,except)+n<=cap[k]);}
@@ -82,7 +76,7 @@
  function retire(s,ids,field){const set=new Set(ids);s.materials=s.materials.filter(m=>{if(!set.has(m.id))return true;s.ledger[field][m.kind]++;return false;});}
  function allocate(s,pet,type,extra){pet.action={id:'action-'+s.nextAction++,type,elapsed:0,elapsedTicks:0,from:{x:pet.x,y:pet.y},...extra};return pet.action;}
  function relocation(s,pet,bed,c){if(pet.home===bed)return true;const b=data(c).beds.get(bed);if(!pet.arrived||!b||!bedAvailable(s,b,c)||s.pets.some(p=>p!==pet&&(p.home===bed||p.action?.bed===bed))||b.permanent&&!c.pets.find(p=>p.id===pet.id).capabilities.includes('build'))return false;
-  if(pet.action)return false;allocate(s,pet,'relocate',{bed,total:3,target:clone(b.point),output:{}});return true;
+  if(pet.action)return false;allocate(s,pet,'relocate',{bed,total:3,target:clone(b.point),route:travel(s,pet,b.point,b.room,c),output:{}});return true;
  }
  function assignHome(s,petId,bed,c=CONFIG.create()){const pet=s.pets.find(p=>p.id===petId);if(s.paused||s.project)return false;return !!pet&&relocation(s,pet,bed,c);}
  function preflight(s,p,c,choices={}){
@@ -95,30 +89,43 @@
   for(const t of p.tasks){if(t.type==='move')stored++;if(t.type==='reuse'&&s.furniture[t.target].status!=='parked')stored--;if(stored>c.furnitureCapacity)return {error:'家具接收空间不足；先将库存家具安置到营地。'};}
   return {moves};
  }
- function preview(s,c=CONFIG.create(),planId=null){
-  const p=planId?c.plans.find(p=>p.id===planId):currentPlan(s,c);if(!p)return null;
+ function preview(s,c=CONFIG.create(),planId=null,choice=null){
+  const base=c.compiled?c.source:c,original=scene(s,base),def=base.plans.find(p=>p.id===(planId||currentPlan(s,original)?.id));if(!def)return null;
+  let building=null,error=null;
+  if(def.mode==='build'&&def.slot!==base.root.slot&&!s.buildings.some(b=>b.id===def.slot)){
+   const options=candidates(s,base,def.id);building=choice||null;
+   if(!building)error=options.length?'请选择建筑尺寸和相邻位置。':'没有合法位置：主体、承托或连接空间不足。';
+   else if(!options.some(o=>o.versions.some(b=>same(b,building))))error='所选位置已失效，请返回选址';
+   if(building)error=error||L.placementError(base,s,building);
+  }
+  let state=s;
+  if(def.mode==='comfort'&&choice){if(!s.buildings.some(b=>b.id===choice.room&&b.template===def.targetTemplate))error='请选择已建成住宅';else state={...s,improvements:{...s.improvements,[def.id]:{room:choice.room,settle:s.pets.filter(p=>original.beds.some(b=>b.id===p.home&&b.room===choice.room)).map(p=>({pet:p.id,bed:p.home}))}}};}
+  c=scene(state,base,building);const p=c.plans.find(p=>p.id===def.id);
   const changed=new Set(p.tasks.flatMap(t=>data(c).groups.has(t.target)?data(c).groups.get(t.target).parts:[t.target]));
-  const retained=c.parts.filter(p=>placed(s,p.id)&&!changed.has(p.id)).map(p=>p.id),cost=zero(c),recovery=zero(c);
-  for(const t of p.tasks){if(t.type==='install')for(const[k,n]of Object.entries(data(c).parts.get(t.target).cost))cost[k]+=n;if(t.type==='dismantle')for(const k of Object.keys(data(c).parts.get(t.target).cost))recovery[k]+=t.recover||0;}
-  return {plan:p,retained,moved:p.tasks.filter(t=>t.type==='move').map(t=>t.target),removed:p.tasks.filter(t=>t.type==='dismantle').map(t=>t.target),added:p.tasks.filter(t=>t.type==='install').map(t=>t.target),reused:p.tasks.filter(t=>t.type==='reuse').map(t=>t.target),cost,recovery,...preflight(s,p,c)};
+  const retained=c.parts.filter(p=>placed(s,p.id)&&!changed.has(p.id)).map(p=>p.id),cost=zero(c),buildingCost=zero(c),connectionCost=zero(c),recovery=zero(c);
+  for(const t of p.tasks){const part=data(c).parts.get(t.target);if(t.type==='install')for(const[k,n]of Object.entries(part.cost)){cost[k]+=n;(part.connection?connectionCost:buildingCost)[k]+=n;}if(t.type==='dismantle')for(const k of Object.keys(part.cost))recovery[k]+=t.recover||0;}
+  return {plan:p,config:c,building,improvement:state.improvements[def.id],retained,moved:p.tasks.filter(t=>t.type==='move').map(t=>t.target),removed:p.tasks.filter(t=>t.type==='dismantle').map(t=>t.target),added:p.tasks.filter(t=>t.type==='install').map(t=>t.target),reused:p.tasks.filter(t=>t.type==='reuse').map(t=>t.target),cost,buildingCost,connectionCost,recovery,...preflight(s,p,c),...(error?{error}:{})};
  }
- function startProject(s,c=CONFIG.create(),choices={},planId=null){
-  if(s.project||s.paused)return false;const p=planId?c.plans.find(p=>p.id===planId):currentPlan(s,c);if(!p||completed(s,p.id)||!p.requires.every(id=>completed(s,id))||p.choiceGroup&&s.selection!==p.id)return false;const check=preflight(s,p,c,choices);if(check.error){note(s,check.error);s.queueWait=check.error;return false;}
-  s.queue=s.queue.filter(id=>id!==p.id);s.queueWait='';
-  s.project={plan:p.id,phase:'preparing',at:0,locked:false,disabled:false,affected:clone(p.disable),moves:check.moves,oldHomes:s.pets.map(p=>({pet:p.id,home:p.home})),consumed:zero(c),sources:{},startedAt:s.time};
-  note(s,'安排临时住处'+(check.moves.length?'：'+check.moves.map(m=>c.pets.find(p=>p.id===m.pet).name+' → '+data(c).rooms.get(data(c).beds.get(m.bed).room).name).join('、'):'')+'，等待受影响空间中的生产批次交付。');return true;
+ function syncObjects(s,c){
+  const ids=new Set(c.parts.map(p=>p.id));for(const [id,o]of Object.entries(s.objects))if(!ids.has(id)){requireRule(o.status==='absent','不能移除已有构件身份');delete s.objects[id];}
+  for(const p of c.parts){if(!s.objects[p.id])s.objects[p.id]={id:p.id,status:'absent',materials:[]};const o=s.objects[p.id];if(o.status==='absent')Object.assign(o,{x:p.x,y:p.y,room:p.room,supports:clone(p.supports)});}
+  const groups=new Set(c.groups.map(g=>g.id));for(const id of Object.keys(s.furniture))if(!groups.has(id)){requireRule(s.furniture[id].status==='absent','不能移除已有家具身份');delete s.furniture[id];}for(const g of c.groups)if(!s.furniture[g.id])s.furniture[g.id]={id:g.id,status:'absent'};
  }
- function cancelProject(s,c=CONFIG.create()){const p=s.project;if(!p||p.locked)return false;if(!queueValid({...s,project:null},s.queue,c)){note(s,'后续待办依赖当前工程，请先移除相关待办。');return false;}for(const old of p.oldHomes){const pet=s.pets.find(p=>p.id===old.pet);if(pet.action?.type==='relocate'){pet.action=null;pet.x=64;pet.y=272;}pet.home=old.home;}s.project=null;note(s,'已取消，住处与设施恢复原安排。');return true;}
- function queueValid(s,ids,c){const done=new Set(s.completed.map(p=>p.id));if(s.project)done.add(s.project.plan);if(ids.length>3||new Set(ids).size!==ids.length)return false;
-  for(const id of ids){const p=c.plans.find(p=>p.id===id);if(!p||done.has(id)||!p.requires.every(id=>done.has(id))||p.choiceGroup&&s.selection!==id)return false;done.add(id);}return true;
+ function startProject(s,c=CONFIG.create(),choices={},planId=null,choice=null){
+  if(s.project||s.paused)return false;const check=preview(s,c,planId,choice);if(!check)return false;const p=check.plan;
+  if(completed(s,p.id)||!p.requires.every(id=>completed(s,id)))return false;
+  if(check.error){note(s,check.error);return false;}const housing=preflight(s,p,check.config,choices);if(housing.error){note(s,housing.error);return false;}
+  if(check.building)s.buildings.push(clone(check.building));
+  if(check.improvement)s.improvements[p.id]=clone(check.improvement);
+  syncObjects(s,scene(s,c));
+  s.project={plan:p.id,phase:'preparing',at:0,locked:false,disabled:false,affected:clone(p.disable),moves:housing.moves,oldHomes:s.pets.map(p=>({pet:p.id,home:p.home})),consumed:zero(c),sources:{},startedAt:s.time,building:check.building?.id||null};
+  note(s,'准备工程：安排安全住处，等待受影响批次交付。');return true;
  }
- function enqueue(s,id,c=CONFIG.create()){if(!queueValid(s,[...s.queue,id],c))return false;s.queue.push(id);return true;}
- function reorderQueue(s,ids,c=CONFIG.create()){if(ids.length!==s.queue.length||!ids.every(id=>s.queue.includes(id))||!queueValid(s,ids,c))return false;s.queue=clone(ids);return true;}
- function removeQueued(s,id,c=CONFIG.create()){const ids=s.queue.filter(p=>p!==id);if(ids.length===s.queue.length||!queueValid(s,ids,c))return false;s.queue=ids;return true;}
- function choose(s,id,c=CONFIG.create()){
-  const existing=c.plans.find(p=>p.id===s.selection);if(existing&&completed(s,existing.id))return false;if(existing&&s.project?.plan===existing.id){if(s.project.locked||!cancelProject(s,c))return false;}
-  if(id!==null){const p=c.plans.find(p=>p.id===id);if(!p?.choiceGroup||!c.plans.filter(p=>p.base).every(p=>completed(s,p.id)))return false;}
-  s.queue=s.queue.filter(p=>p!==s.selection);s.selection=id;return true;
+ function cancelProject(s,c=CONFIG.create()){
+  const p=s.project;if(!p||p.locked)return false;
+  for(const old of p.oldHomes){const pet=s.pets.find(p=>p.id===old.pet);if(pet.action?.type==='relocate')pet.action=null;pet.home=old.home;}
+  if(p.building){s.buildings=s.buildings.filter(b=>b.id!==p.building);syncObjects(s,scene(s,c.source||c));}
+  s.project=null;note(s,'已取消，住处与设施恢复原安排。');return true;
  }
  function cycleGarden(s,c=CONFIG.create()){if(!activeEffects(s,c).some(p=>p.effect.residents))return false;s.gardenStyle=1-s.gardenStyle;return true;}
  function parkFurniture(s,id,c=CONFIG.create()){const g=s.furniture[id];if(s.paused||s.project||g?.status!=='stored')return false;g.status='parked';return true;}
@@ -133,18 +140,42 @@
   const inv=inventory(s,c);if(r.buffer&&Object.entries(r.output).every(([k,n])=>inv[k]+reserved(s,k)>=Math.min(capacity(s,c)[k],r.buffer*(capacity(s,c)[k]/c.capacity[k]))))return false;
   if(Object.entries(r.input).some(([k,n])=>inv[k]<n))return false;
   const assistance=(s.assists[r.capability]||0)>0?c.interactions.assistEfficiency:0,rate=efficiency(s,pet,r,c)+assistance;
-  const a=allocate(s,pet,'production',{recipe:r.id,facility:fac.id||null,room:fac.room,output:clone(r.output),target:clone(fac.point),efficiency:rate,assisted:!!assistance,total:r.seconds/rate+4,workEnd:r.seconds/rate+2,minted:false,materials:[]});
+  const a=allocate(s,pet,'production',{recipe:r.id,facility:fac.id||null,room:fac.room,output:clone(r.output),target:clone(fac.point),route:travel(s,pet,fac.point,fac.room,c),returnRoute:travel(s,fac.point,{x:104,y:272},null,c),efficiency:rate,assisted:!!assistance,total:r.seconds/rate+4,workEnd:r.seconds/rate+2,minted:false,materials:[]});
   if(assistance)s.assists[r.capability]--;
   const ids=claim(s,r.input,'processing',a.id,c);retire(s,ids,'consumed');s.ledger.recipes[r.id].started++;return true;
  }
  function along(points,t){const lengths=points.slice(1).map((p,i)=>Math.hypot(p.x-points[i].x,p.y-points[i].y)),total=lengths.reduce((a,b)=>a+b,0);let left=t*total;for(let i=0;i<lengths.length;i++){if(left<=lengths[i]||i===lengths.length-1){const f=lengths[i]?left/lengths[i]:1;return {x:points[i].x+(points[i+1].x-points[i].x)*f,y:points[i].y+(points[i+1].y-points[i].y)*f};}left-=lengths[i];}return points[0];}
+ function roomPath(s,room,c,work=false){
+  const r=data(c).rooms.get(room);if(!r||r.initial)return [{x:104,y:272}];
+  if(work&&!roomReady(s,room,c)){
+   const b=c.instances.find(b=>b.id===room),co=b.connection,access=r.access.filter(id=>data(c).parts.get(id)?.kind!=='door');
+   if(co?.type==='upper'||co?.type==='step'&&r.entry.y<256){
+    const stairs=access.filter(id=>data(c).parts.get(id).kind==='stairs'),installed=stairs.filter(id=>placed(s,id)).length,low=co.type==='upper'?co.route[1]:co.low,high=co.type==='upper'?co.to:co.high,points=[{x:low.x,y:272},low];
+    if(installed===stairs.length)points.push(high);else if(installed){const f=installed/stairs.length;points.push({x:low.x+(high.x-low.x)*f,y:low.y+(high.y-low.y)*f});}return points;
+   }
+   return [{x:r.entry.x,y:272},...(access.every(id=>placed(s,id))?[r.entry]:[])];
+  }
+  if(!roomReady(s,room,c))return null;
+  if(!r.connection)return [{x:r.entry.x-16,y:272},r.entry,r.point];
+  return [...roomPath(s,r.connection.parent,c),r.connection.from,...r.connection.route.slice(1),r.entry,r.point];
+ }
+ function travel(s,from,target,room,c,work=false){
+  const start=c.rooms.filter(r=>!r.initial&&roomReady(s,r.id,c)&&Math.abs(from.y-r.point.y)<1&&from.x>=c.instances.find(b=>b.id===r.id).x&&from.x<=c.instances.find(b=>b.id===r.id).x+L.variant(c.source,c.instances.find(b=>b.id===r.id)).width).find(r=>true);
+  const exit=from.escapeRoute?.length?clone(from.escapeRoute):start?roomPath(s,start.id,c).slice().reverse():[{x:from.x,y:272}],enter=roomPath(s,room,c,work);
+  if(!enter)return null;return [clone(from),...exit,{x:104,y:272},...enter,clone(target)];
+ }
+ function distance(points){return points.slice(1).reduce((n,p,i)=>n+Math.hypot(p.x-points[i].x,p.y-points[i].y),0);}
  function actionPoint(s,pet,c){const a=pet.action;if(!a)return {x:pet.x,y:pet.y,phase:'rest'};
-  if(a.motion){const pose=MOT.sample(a.motion),route=data(c).rooms.get(s.objects[a.part]?.room)?.route;if(route&&pose.phase==='climb')return {...pose,...along([{x:a.target.x,y:272},...route,a.target],pose.progress)};return pose;}
-  if(a.type==='relocate'){const route=data(c).rooms.get(data(c).beds.get(a.bed)?.room)?.route,old=data(c).rooms.get(data(c).beds.get(pet.home)?.room)?.route;return {...along([a.from,...(old?clone(old).reverse():[]),...(route||[]),a.target],Math.min(1,a.elapsed/a.total)),phase:'walk'};}
-  const workEnd=a.workEnd||a.total-1,ratio=a.elapsed<2?Math.min(1,a.elapsed/2):a.elapsed>=workEnd?Math.min(1,(a.elapsed-workEnd)/Math.max(.001,a.total-workEnd)):0;
-  if(a.elapsed<2)return {x:a.from.x+(a.target.x-a.from.x)*ratio,y:a.from.y+(a.target.y-a.from.y)*ratio,phase:'walk'};
-  if(a.type==='production'&&a.elapsed>=workEnd)return {x:a.target.x+(104-a.target.x)*ratio,y:a.target.y+(272-a.target.y)*ratio,phase:'deliver',held:Object.keys(a.output)[0]};
-  return {...a.target,phase:a.type==='relocate'?'move':a.type==='production'?'work':a.type,hammer:a.type==='install'||a.type==='dismantle'};
+  if(a.type==='relocate')return {...along(a.route,Math.min(1,a.elapsed/a.total)),phase:'walk'};
+  if(a.type==='production'){
+   if(a.elapsed<2)return {...along(a.route,a.elapsed/2),phase:'walk'};
+   if(a.elapsed>=a.workEnd)return {...along(a.returnRoute,Math.min(1,(a.elapsed-a.workEnd)/(a.total-a.workEnd))),phase:'deliver',held:Object.keys(a.output)[0]};
+   return {...a.target,phase:'work'};
+  }
+  if(a.elapsed<a.fetchEnd)return {...along(a.fetchRoute,a.elapsed/Math.max(.001,a.fetchEnd)),phase:'fetch'};
+  if(a.elapsed<a.travelEnd)return {...along(a.route,(a.elapsed-a.fetchEnd)/Math.max(.001,a.travelEnd-a.fetchEnd)),phase:'carry',held:a.type==='install'?Object.keys(data(c).parts.get(a.part).cost)[0]:null};
+  if(a.elapsed>=a.workEnd&&a.type==='dismantle')return {...along(a.returnRoute,Math.min(1,(a.elapsed-a.workEnd)/(a.total-a.workEnd))),phase:'deliver',held:Object.keys(a.output)[0]};
+  return {...a.target,phase:a.elapsed>=a.workEnd?'reveal':'install',hammer:a.elapsed<a.workEnd};
  }
  function workStatus(s,pet,c=CONFIG.create()){
   if(pet.action){const a=pet.action;if(a.type==='production')return data(c).recipes.get(a.recipe).name+(a.minted?' · 正在运输交付':' · 正在作业');return {relocate:'正在搬迁',install:'正在搬运安装',dismantle:'正在拆解回收',move:'正在完整搬出家具',reuse:'正在复用家具'}[a.type];}
@@ -167,9 +198,8 @@
    const stock=inventory(s,c),missing=Object.fromEntries(Object.entries(p.cost).filter(([k,n])=>stock[k]<n).map(([k,n])=>[k,n-stock[k]]));
    if(Object.keys(missing).length){note(s,'缺少 '+Object.entries(missing).map(([k,n])=>c.materials[k]+' '+n).join('、')+'；取材或生产后自动继续。');return missing;}
    const ids=claim(s,p.cost,'transport',p.id,c),materials=ids.map(id=>s.materials.find(m=>m.id===id));
-   const o=s.objects[p.id],target={x:o.x+8,y:Math.min(272,o.y+16)};
-   const motion=MOT.create({id:p.id,buildAction:'install',seconds:p.seconds,cost:p.cost},materials,[{x:pet.x,y:pet.y}],0,target,false,false,{ground:272,piles:{W:104,S:112,Q:96,C:96},view:{}});
-   allocate(s,pet,'install',{target,part:p.id,materials:ids,output:{},total:motion.total,motion});
+   const o=s.objects[p.id],room=data(c).rooms.get(o.room),work=roomPath(s,o.room,c,true),target=work.at(-1),fetchRoute=travel(s,pet,{x:104,y:272},null,c),route=travel(s,{x:104,y:272},target,o.room,c,true),fetchEnd=Math.max(.2,distance(fetchRoute)/320)+.35,travelEnd=fetchEnd+Math.max(.2,distance(route)/320),workEnd=travelEnd+p.seconds;
+   allocate(s,pet,'install',{target,part:p.id,materials:ids,output:{},fetchRoute,route,returnRoute:[],fetchEnd,travelEnd,workEnd,total:workEnd+.45});
    for(const m of materials){proj.consumed[m.kind]++;proj.sources[m.source]=(proj.sources[m.source]||0)+1;}
   }else if(t.type==='dismantle'){
    if(!placed(s,p.id)||!canDismantle(s,p.id,c))return note(s,'拆解会破坏支撑，工程停止。'),false;
@@ -183,6 +213,11 @@
    if(!['stored','parked'].includes(s.furniture[g.id].status))return note(s,'等待可复用家具。'),false;
    if(t.supports&&!t.supports.every(id=>placed(s,id)))return false;
    allocate(s,pet,'reuse',{group:g.id,room:t.room,positions:clone(t.positions),supports:clone(t.supports||[]),target:{x:t.positions[0].x+8,y:t.positions[0].y+16},total:g.parts.length*3+2,output:{}});
+  }
+  const action=pet.action;
+  if(t.type!=='install'){
+   const object=s.objects[p?.id||g.parts[0]],plan=c.plans.find(plan=>plan.id===proj.plan),room=t.room||(p?.kind==='roof'&&plan.mode==='build'?plan.targetRoom:object.room),path=roomPath(s,room,c,true),target=path.at(-1),route=travel(s,pet,target,room,c,true),workSeconds=action.total;
+   Object.assign(action,{target,fetchRoute:[{x:pet.x,y:pet.y}],fetchEnd:0,route,travelEnd:Math.max(.2,distance(route)/320)});action.workEnd=action.travelEnd+workSeconds;action.returnRoute=[...route].reverse();action.total=action.workEnd+(t.type==='dismantle'?Math.max(.2,distance(action.returnRoute)/320):0);
   }
   proj.locked=true;return true;
  }
@@ -208,9 +243,9 @@
    g.parts.forEach((id,i)=>{const o=s.objects[id];o.status=a.type==='move'?'stored':'installed';if(a.positions){o.x=a.positions[i].x;o.y=a.positions[i].y;o.room=a.room;o.supports=clone(a.supports);}for(const m of s.materials)if(o.materials.includes(m.id))m.state=a.type==='move'?'furniture':'installed';});
   }
   if(['install','dismantle','move','reuse'].includes(a.type))s.project.at++;
-  const pose=actionPoint(s,pet,c);pet.x=Math.round(pose.x);pet.y=Math.round(pose.y);pet.action=null;return true;
+  const pose=actionPoint(s,pet,c);pet.x=pose.x;pet.y=pose.y;pet.escapeRoute=a.type==='relocate'?[...roomPath(s,data(c).beds.get(a.bed).room,c)].reverse():['install','move','reuse'].includes(a.type)?[...a.route].reverse():[];pet.action=null;return true;
  }
- function projectStep(s,c){const p=s.project;if(!p){if(s.queue.length)startProject(s,c,{},s.queue[0]);return;}const plan=c.plans.find(q=>q.id===p.plan);
+ function projectStep(s,c){const p=s.project;if(!p)return;const plan=c.plans.find(q=>q.id===p.plan);
   if(p.phase==='preparing'){
    if(s.pets.some(pet=>pet.action?.type==='production'&&p.affected.includes(pet.action.room))){note(s,'等待受影响设施的当前批次完成并交付。');return;}
    for(const move of p.moves){const pet=s.pets.find(p=>p.id===move.pet);if(pet.home!==move.bed){relocation(s,pet,move.bed,c);return;}}
@@ -218,7 +253,8 @@
   }
   if(p.phase==='work'&&p.at===plan.tasks.length){p.disabled=false;p.phase='settling';}
   if(p.phase==='settling'){
-   for(const move of plan.settle){const pet=s.pets.find(p=>p.id===move.pet);if(pet.home!==move.bed){if(!relocation(s,pet,move.bed,c))note(s,'等待目标床位腾空或当前任务交付。');return;}}
+   const returning=p.oldHomes.filter(old=>old.home&&p.moves.some(move=>move.pet===old.pet)&&!plan.settle.some(move=>move.pet===old.pet)&&bedAvailable(s,data(c).beds.get(old.home),c)).map(old=>({pet:old.pet,bed:old.home}));
+   for(const move of [...plan.settle,...returning]){const pet=s.pets.find(p=>p.id===move.pet);if(pet.home!==move.bed){if(!relocation(s,pet,move.bed,c))note(s,'等待目标床位腾空或当前任务交付。');return;}}
    s.completed.push({id:plan.id,time:s.time,consumed:p.consumed,sources:p.sources});for(const id of plan.unlock)s.pets.find(p=>p.id===id).arrived=true;for(const decoration of plan.effect?.decorations||[])if(!s.decorations.includes(decoration))s.decorations.push(decoration);
    s.project=null;note(s,plan.name+'完成，小镇继续生产。'+(plan.base?'可继续安排已解锁工程。':'扩展设施已投入使用。'));
   }
@@ -247,7 +283,6 @@
   const slot=Array.from({length:c.interactions.slots},(_,i)=>i).find(i=>!used.has(i)),point={x:camp.x+slot*40,y:camp.y};
   s.interactions.push({...event,point,id:'interaction-'+s.nextInteraction++,status:event.clicks?'active':'ready',createdAt:s.time,visitor:{slot,from:{x:camp.x-72,y:camp.y},arriveAt:s.time+10+slot*2}});
  }
- // Older idle events already waited at their saved points; no configuration or queue migration.
  function visitorPose(s,e){
   if(!e.visitor)return {...e.point,arrived:true,phase:'idle'};
   const leaving=e.resolvedAt!==undefined,start=leaving?e.resolvedAt:e.createdAt,end=leaving?start+8:e.visitor.arriveAt;
@@ -275,24 +310,26 @@
  function abandonInteraction(s,id,c=CONFIG.create()){const e=s.interactions.find(e=>e.id===id);if(s.paused||!e)return false;s.interactionHistory.push({...clone(e),status:'abandoned',resolvedAt:s.time});s.interactions=s.interactions.filter(q=>q!==e);s.nextEvent=Math.max(s.nextEvent,s.ticks+Math.round(c.interactions.interval/STEP));return true;}
  function tick(s,c,count=1){s.ticks+=count;s.time=s.ticks*STEP;
   for(const id of Object.keys(s.regrowth))s.regrowth[id]=Math.max(0,Math.round(s.regrowth[id]/STEP)-count)*STEP;
-  for(const pet of s.pets){const a=pet.action;if(!a)continue;const rate=['install','dismantle','move','reuse'].includes(a.type)?s.multiplier:1;a.elapsedTicks+=count*rate;a.elapsed=Math.min(a.total,a.elapsedTicks*STEP);if(a.motion)a.motion.elapsed=a.elapsed;
+  for(const pet of s.pets){const a=pet.action;if(!a)continue;const rate=['install','dismantle','move','reuse'].includes(a.type)?s.multiplier:1;a.elapsedTicks+=count*rate;a.elapsed=Math.min(a.total,a.elapsedTicks*STEP);
    if(a.type==='production'&&!a.minted&&a.elapsed+1e-8>=a.workEnd){for(const[k,n]of Object.entries(a.output))a.materials.push(...mint(s,k,n,'transit',a.id,a.recipe));a.minted=true;s.ledger.recipes[a.recipe].finished++;}
    if(a.elapsed+1e-8>=a.total)completeAction(s,pet,a,c);
   }
   projectStep(s,c);for(const pet of s.pets)schedule(s,pet,c);generateInteraction(s,c);
  }
  // Skip only ticks without a threshold crossing; all mutations still use the same tick rules.
- function nextBoundary(s,c){if(s.queue.length&&!s.project||s.project&&s.project.phase!=='work')return 1;let n=Math.max(1,s.nextEvent-s.ticks);for(const pet of s.pets){const a=pet.action;if(!a)continue;const rate=['install','dismantle','move','reuse'].includes(a.type)?s.multiplier:1;for(const end of [a.total,...(a.type==='production'&&!a.minted?[a.workEnd]:[])])n=Math.min(n,Math.max(1,Math.ceil((end-a.elapsed-1e-8)/(STEP*rate))));}for(const value of Object.values(s.regrowth))if(value>0)n=Math.min(n,Math.max(1,Math.round(value/STEP)));return n;}
+ function nextBoundary(s,c){if(s.project&&s.project.phase!=='work')return 1;let n=Math.max(1,s.nextEvent-s.ticks);for(const pet of s.pets){const a=pet.action;if(!a)continue;const rate=['install','dismantle','move','reuse'].includes(a.type)?s.multiplier:1;for(const end of [a.total,...(a.type==='production'&&!a.minted?[a.workEnd]:[])])n=Math.min(n,Math.max(1,Math.ceil((end-a.elapsed-1e-8)/(STEP*rate))));}for(const value of Object.values(s.regrowth))if(value>0)n=Math.min(n,Math.max(1,Math.round(value/STEP)));return n;}
  function advance(s,dt=STEP,c=CONFIG.create()){if(s.paused)return;requireRule(Number.isFinite(dt)&&dt>=0&&dt<=60,'无效模拟时间');const total=s.remainder+dt;let ticks=Math.floor((total+1e-9)/STEP);s.remainder=Math.max(0,total-ticks*STEP);if(s.remainder<1e-8)s.remainder=0;let first=true;while(ticks){const n=first?1:Math.min(ticks,nextBoundary(s,c));tick(s,c,n);ticks-=n;first=false;}}
  function validate(s,c=CONFIG.create()){
-  validateConfig(c);const d=data(c);requireRule(s?.format==='town-idle','不支持此存档格式');requireRule(s.version===1&&s.configVersion===c.version&&s.scene===c.id&&s.signature===JSON.stringify(c),'存档版本或图纸配置不匹配，原记录已保留');
+  validateConfig(c);const d=data(c);requireRule(s?.format==='town-modular','不支持此存档格式');requireRule(s.version===1&&s.configVersion===c.version&&s.scene===c.id&&s.signature===JSON.stringify(c.source||c),'存档版本或图纸配置不匹配，原记录已保留');
   requireRule(s.status==='running'&&typeof s.paused==='boolean'&&[1,2].includes(s.multiplier)&&Number.isInteger(s.ticks)&&s.ticks>=0&&Math.abs(s.time-s.ticks*STEP)<1e-7&&s.remainder>=0&&s.remainder<STEP+1e-8,'时间状态损坏');
   requireRule(Array.isArray(s.completed)&&new Set(s.completed.map(p=>p.id)).size===s.completed.length&&s.completed.every((p,i)=>{const plan=c.plans.find(q=>q.id===p.id);return plan&&plan.requires.every(id=>s.completed.slice(0,i).some(q=>q.id===id));}),'工程记录损坏');
-  requireRule(queueValid(s,s.queue,c),'待办依赖损坏');requireRule(c.plans.filter(p=>p.choiceGroup&&completed(s,p.id)).length<=1&&(!s.selection||c.plans.some(p=>p.id===s.selection&&p.choiceGroup)),'扩展选择损坏');
+  requireRule(!('queue' in s)&&!('selection' in s),'新版不支持队列或旧布局');
+  const base=c.source||c;requireRule(Array.isArray(s.buildings)&&new Set(s.buildings.map(b=>b.id)).size===s.buildings.length,'建筑实例身份损坏');
+  for(const b of s.buildings){requireRule(base.slots.some(slot=>slot.id===b.id&&slot.template===b.template),'未知建筑实例');requireRule(!L.placementError(base,{...s,buildings:s.buildings.filter(o=>o.id!==b.id)},b,{reserve:false}),'建筑布局、支撑或连接损坏');}
   requireRule(s.layout&&same(s.layout,layout(c,s.layout.seed))&&Number.isSafeInteger(s.eventRng)&&s.eventRng>=0&&s.eventRng<4294967296&&Number.isSafeInteger(s.nextEvent)&&s.nextEvent>s.ticks&&Number.isSafeInteger(s.nextInteraction)&&s.nextInteraction>0&&[0,1].includes(s.gardenStyle),'随机或互动时钟损坏');
   requireRule(Number.isFinite(s.wallTime)&&s.wallTime>=0&&s.interactions.length<=c.interactions.slots&&new Set([...s.interactions,...s.interactionHistory].map(e=>e.id)).size===s.interactions.length+s.interactionHistory.length,'互动记录损坏');
   for(const e of [...s.interactions,...s.interactionHistory])requireRule(['pickup','commission','assist'].includes(e.type)&&['active','ready','claimed','abandoned'].includes(e.status)&&Number.isInteger(e.progress)&&e.progress>=0&&e.progress<=e.clicks&&Object.entries({...e.input,...e.reward}).every(([k,n])=>k in c.materials&&Number.isSafeInteger(n)&&n>=0)&&(e.type!=='assist'||d.recipes.get(e.recipe)?.capability===e.assistKey),'互动任务损坏');
-  for(const e of [...s.interactions,...s.interactionHistory])if(e.visitor)requireRule(Number.isInteger(e.visitor.slot)&&e.visitor.slot>=0&&e.visitor.slot<c.interactions.slots&&[e.createdAt,e.point?.x,e.point?.y,e.visitor.from?.x,e.visitor.from?.y,e.visitor.arriveAt].every(Number.isFinite)&&e.visitor.arriveAt>e.createdAt&&(e.resolvedAt===undefined||Number.isFinite(e.resolvedAt)&&e.resolvedAt>=e.createdAt),'来访路线损坏');
+  for(const e of [...s.interactions,...s.interactionHistory])requireRule(Number.isInteger(e.visitor.slot)&&e.visitor.slot>=0&&e.visitor.slot<c.interactions.slots&&[e.createdAt,e.point?.x,e.point?.y,e.visitor.from?.x,e.visitor.from?.y,e.visitor.arriveAt].every(Number.isFinite)&&e.visitor.arriveAt>e.createdAt&&(e.resolvedAt===undefined||Number.isFinite(e.resolvedAt)&&e.resolvedAt>=e.createdAt),'来访路线损坏');
   for(const [id,n]of Object.entries(s.assists))requireRule(c.recipes.some(r=>r.capability===id)&&Number.isInteger(n)&&n>=0&&n<=c.interactions.assistBatches,'协助批次损坏');
   requireRule(s.pets.length===c.pets.length&&new Set(s.pets.map(p=>p.id)).size===s.pets.length&&s.pets.every(p=>c.pets.some(q=>q.id===p.id)),'宠物身份损坏');
   const actions=s.pets.map(p=>p.action).filter(Boolean),facilities=actions.map(a=>a.facility).filter(Boolean);requireRule(new Set(actions.map(a=>a.id)).size===actions.length&&new Set(facilities).size===facilities.length,'居民或设施重复占用');
@@ -302,9 +339,10 @@
    requireRule(['production','install','dismantle','move','reuse','relocate'].includes(a.type)&&Number.isSafeInteger(a.elapsedTicks)&&a.elapsedTicks>=0&&a.elapsed===Math.min(a.total,a.elapsedTicks*STEP)&&a.elapsed>=0&&a.elapsed<=a.total+1e-7&&a.total>0&&[a.target.x,a.target.y,a.from.x,a.from.y].every(Number.isFinite),'任务进度损坏');
    if(a.type==='production'){const r=d.recipes.get(a.recipe);requireRule(r&&c.pets.find(p=>p.id===pet.id).capabilities.includes(r.capability)&&Number.isFinite(a.efficiency)&&a.efficiency>=1&&a.total===r.seconds/a.efficiency+4&&a.workEnd===r.seconds/a.efficiency+2&&same(a.output,r.output)&&a.workEnd<a.total&&a.minted===(a.elapsed+1e-8>=a.workEnd),'生产批次损坏');requireRule(a.materials.length===(a.minted?Object.values(r.output).reduce((a,b)=>a+b,0):0)&&new Set(a.materials).size===a.materials.length,'在途产物损坏');for(const[k,n]of Object.entries(r.output))requireRule(a.materials.filter(id=>s.materials.some(m=>m.id===id&&m.kind===k&&m.source===r.id&&m.owner===a.id)).length===(a.minted?n:0),'产物配方不符');}
    if(a.type==='relocate')requireRule(d.beds.has(a.bed)&&bedAvailable(s,d.beds.get(a.bed),c)&&!s.pets.some(p=>p!==pet&&p.home===a.bed),'搬迁目的床位损坏');
-   if(['install','dismantle','move','reuse'].includes(a.type)){const t=c.plans.find(p=>p.id===s.project?.plan)?.tasks[s.project?.at];requireRule(s.project?.phase==='work'&&s.project.locked&&t?.type===a.type&&t.target===(a.part||a.group)&&c.pets.find(p=>p.id===pet.id).capabilities.includes('build'),'施工归属损坏');if(a.motion){requireRule(a.motion.elapsed===a.elapsed&&a.motion.total===a.total&&same(a.motion.materialIds,a.materials),'搬运动作损坏');MOT.validate(a.motion,s.materials);}}
+   if(['install','dismantle','move','reuse'].includes(a.type)){const t=c.plans.find(p=>p.id===s.project?.plan)?.tasks[s.project?.at];requireRule(s.project?.phase==='work'&&s.project.locked&&t?.type===a.type&&t.target===(a.part||a.group)&&c.pets.find(p=>p.id===pet.id).capabilities.includes('build'),'施工归属损坏');}
   }
   if(s.project){const p=s.project,plan=c.plans.find(q=>q.id===p.plan);requireRule(plan&&p.plan===plan.id&&['preparing','work','settling'].includes(p.phase)&&Number.isInteger(p.at)&&p.at>=0&&p.at<=plan.tasks.length&&same(p.affected,plan.disable)&&typeof p.locked==='boolean'&&p.disabled===(p.phase==='work'),'工程进度损坏');}
+  for(const pet of s.pets){for(const route of [pet.escapeRoute,...(pet.action?[pet.action.route,pet.action.returnRoute,pet.action.fetchRoute]:[])].filter(Boolean))requireRule(Array.isArray(route)&&route.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)),'角色路线损坏');}
   const debug=s.ledger.debug;
   if(debug)for(const field of ['added','removed'])requireRule(debug[field]&&same(Object.keys(debug[field]).sort(),kinds(c).sort())&&Object.values(debug[field]).every(n=>Number.isSafeInteger(n)&&n>=0),'调试材料账本损坏');
   const ids=new Set();for(const m of s.materials){requireRule(Number.isInteger(m.id)&&m.id>0&&m.id<s.nextMaterial&&!ids.has(m.id)&&m.kind in c.materials&&['stock','yard','salvage','installed','transport','furniture','transit'].includes(m.state)&&(m.source==='initial'||m.source==='reward'||d.recipes.has(m.source)||m.source==='debug'&&debug),'材料身份损坏');ids.add(m.id);
@@ -313,13 +351,13 @@
    if(m.state==='transport')requireRule(s.pets.some(p=>p.action?.part===m.owner&&p.action.materials.includes(m.id)&&p.action.type==='install'),'施工在途归属损坏');
    if(['installed','furniture'].includes(m.state))requireRule(s.objects[m.owner]?.materials.includes(m.id),'构件材料归属损坏');
   }
-  const expected=Object.fromEntries(c.parts.map(p=>[p.id,{status:'absent',x:p.x+(p.plot?s.layout.anchor.x:0),y:p.y,room:p.room,supports:p.supports}]));let loss=0;
+  const expected=Object.fromEntries(c.parts.map(p=>[p.id,{status:'absent',x:p.x,y:p.y,room:p.room,supports:p.supports}]));let loss=0;
   for(let i=0;i<s.completed.length+Number(!!s.project);i++){const plan=c.plans.find(p=>p.id===(i<s.completed.length?s.completed[i].id:s.project.plan)),tasks=i<s.completed.length?plan.tasks:plan.tasks.slice(0,s.project.at);for(const t of tasks){if(t.type==='install')expected[t.target].status='installed';if(t.type==='dismantle'){expected[t.target].status='removed';loss+=1-(t.recover||0);}if(t.type==='move'||t.type==='reuse')d.groups.get(t.target).parts.forEach((id,j)=>{expected[id].status=t.type==='move'?'stored':'installed';if(t.type==='reuse')Object.assign(expected[id],t.positions[j],{room:t.room,supports:t.supports||[]});});}}
   requireRule(Object.values(s.ledger.lost).reduce((a,b)=>a+b,0)===loss,'拆解回收重复或缺失');
   for(const p of c.parts){const o=s.objects[p.id];requireRule(o?.id===p.id&&same({status:o.status,x:o.x,y:o.y,room:o.room,supports:o.supports},expected[p.id]),'工程差异或保留件身份损坏');
    requireRule(o.materials.length===(['installed','stored'].includes(o.status)?1:0)&&o.materials.every(id=>s.materials.some(m=>m.id===id&&m.owner===p.id&&m.kind in p.cost&&m.state===(o.status==='stored'?'furniture':'installed'))),'构件材料不守恒');
    if(o.status==='installed')requireRule(o.supports.every(id=>placed(s,id)),'支撑链损坏');
-   if(!p.group||!c.plans.filter(p=>completed(s,p.id)||p.id===s.project?.plan).some(p=>p.tasks.some(t=>t.type==='reuse'&&t.target===d.parts.get(o.id).group)))requireRule(o.x===p.x+(p.plot?s.layout.anchor.x:0)&&o.y===p.y&&o.room===p.room,'保留构件位置损坏');
+   if(!p.group||!c.plans.filter(p=>completed(s,p.id)||p.id===s.project?.plan).some(p=>p.tasks.some(t=>t.type==='reuse'&&t.target===d.parts.get(o.id).group)))requireRule(o.x===p.x&&o.y===p.y&&o.room===p.room,'保留构件位置损坏');
   }
   for(const g of c.groups){const f=s.furniture[g.id];requireRule(f&&['absent','installed','stored','parked','removed'].includes(f.status),'家具库存损坏');if(['stored','parked'].includes(f.status))requireRule(g.parts.every(id=>s.objects[id].status==='stored'),'家具组重复结算');if(f.status==='installed')requireRule(g.parts.every(id=>placed(s,id)),'家具组不完整');}
   requireRule(Object.values(s.furniture).filter(g=>g.status==='stored').length<=c.furnitureCapacity&&s.materials.filter(m=>m.state==='yard').length<=c.yardCapacity&&s.materials.filter(m=>m.state==='salvage').length<=c.salvageCapacity,'接收容量损坏');
@@ -336,6 +374,8 @@
  }
  function save(s,c=CONFIG.create()){validate(s,c);return JSON.stringify(s);}
  function restore(text,c=CONFIG.create()){requireRule(typeof text==='string'&&text.length<4000000,'存档过大');const s=JSON.parse(text);validate(s,c);return s;}
- const api={STEP,SAVE_KEY,visitorPose,currentPlan,capacity,efficiency,reserved,enqueue,reorderQueue,removeQueued,choose,cycleGarden,interactionCheck,progressInteraction,claimInteraction,abandonInteraction,stableRecipes,layout,create,advance,inventory,debugSetInventory,preview,startProject,cancelProject,assignHome,parkFurniture,stow,roomReady,roomAvailable,bedAvailable,comfort,actionPoint,workStatus,validate,validateConfig,save,restore};
+ const api={STEP,SAVE_KEY,scene,candidates,visitorPose,currentPlan,capacity,efficiency,reserved,cycleGarden,interactionCheck,progressInteraction,claimInteraction,abandonInteraction,stableRecipes,layout,create,advance,inventory,debugSetInventory,preview,startProject,cancelProject,assignHome,parkFurniture,stow,roomReady,roomAvailable,bedAvailable,comfort,actionPoint,workStatus,validate,validateConfig,save,restore};
+ for(const name of ['interactionCheck','progressInteraction','claimInteraction','abandonInteraction','cycleGarden','currentPlan','capacity','efficiency','stableRecipes','advance','inventory','debugSetInventory','assignHome','parkFurniture','stow','roomReady','roomAvailable','bedAvailable','comfort','actionPoint','workStatus','validate','save']){const fn=api[name];api[name]=function(s,...args){const pos={interactionCheck:1,progressInteraction:1,claimInteraction:1,abandonInteraction:1,efficiency:2,advance:1,inventory:0,debugSetInventory:1,assignHome:2,parkFurniture:1,stow:1,roomReady:1,roomAvailable:1,bedAvailable:1,comfort:1,actionPoint:1,workStatus:1}[name]??0;args[pos]=scene(s,args[pos]||CONFIG.create());return fn(s,...args);};}
+ api.restore=function(text,c=CONFIG.create()){requireRule(typeof text==='string'&&text.length<4000000,'存档过大');const s=JSON.parse(text);requireRule(s?.format==='town-modular','不支持此存档格式');validate(s,scene(s,c));return s;};
  if(node)module.exports=api;else root.TownGrowthEngine=api;
 })(globalThis);
