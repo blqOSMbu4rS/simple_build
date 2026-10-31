@@ -61,7 +61,8 @@
  const placed=(s,id)=>s.objects[id]?.status==='installed';
  const completed=(s,id)=>s.completed.some(p=>p.id===id);
  function currentPlan(s,c=CONFIG.create()){return c.plans.find(p=>p.id===s.project?.plan)||c.plans.find(p=>p.base&&!completed(s,p.id));}
- function capacity(s,c=CONFIG.create()){const out=clone(c.capacity);for(const p of activeEffects(s,c))if(p.effect.capacity)for(const k of kinds(c))out[k]=c.capacity[k]*p.effect.capacity;return out;}
+ // Built storage space survives temporary closure; operating efficiency still requires availability.
+ function capacity(s,c=CONFIG.create()){const out=clone(c.capacity);for(const p of c.plans)if(p.effect?.capacity&&completed(s,p.id)&&roomReady(s,p.effectRoom,c))for(const k of kinds(c))out[k]=c.capacity[k]*p.effect.capacity;return out;}
  function activeEffects(s,c){return c.plans.filter(p=>p.effect&&completed(s,p.id)&&roomAvailable(s,p.effectRoom,c));}
  function roomReady(s,id,c){const r=data(c).rooms.get(id);return !!r&&(r.initial||r.requirements.every(p=>placed(s,p))&&r.access.every(p=>placed(s,p))&&(!r.connection||roomReady(s,r.connection.parent,c)));}
  const disabled=(s,id)=>!!s.project?.disabled&&s.project.affected.includes(id);
