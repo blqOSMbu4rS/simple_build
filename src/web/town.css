@@ -88,3 +88,9 @@ dialog::backdrop{background:transparent;backdrop-filter:none}dialog h2{font-size
 #blueprint-scene,#extensions canvas{display:block;width:100%;height:auto;image-rendering:pixelated;border:1px solid #587267;border-radius:8px;margin:12px 0}.placement-options{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.placement-options [aria-pressed=true]{outline:2px solid #b4d6a7;background:#426258}.placement-hint{position:absolute;z-index:8;bottom:65px;left:16px;max-width:calc(100% - 32px);padding:10px;background:#243f35f5;border:1px solid #adc8a0;border-radius:8px}#building-size,#building-type{max-width:100%}
 
 .placement-hint{color:#f3edcc}
+
+/* A single compact building entry; detailed stages and results live in its dialog. */
+.project-badge{width:100%}.project-badge>span{min-width:0}.project-badge small{white-space:normal;line-height:1.4;overflow-wrap:anywhere}.project-badge[data-state=blocked]{border-color:#cb9a69}#project-result{padding:16px;border:1px solid #8d9f6d;border-left:4px solid #567256;background:#e5e8d1;border-radius:6px}#project-result h3{font-size:18px}#project-result p{margin:8px 0}#project-history{border-top:1px solid var(--line);margin-top:12px}#project-history summary{font-size:13px}#build-empty{margin:12px 0}.project-row .task-count{color:var(--forest)}.placement-options button{text-align:left;flex:1 1 180px;white-space:normal}.placement-options [aria-pressed=true]{background:#d7dfbd;color:#304b35}.dialog-actions{flex-wrap:wrap}.dialog-actions button{min-height:44px}#placement-back{margin-bottom:12px}
+@media(max-width:799px){#project-result{padding:12px}.dialog-actions button{flex:1 1 130px}.project-badge small{font-size:10px}.project-badge{min-height:64px}}
+
+.project-badge small{font-size:11px;line-height:1.5}
