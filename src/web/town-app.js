@@ -7,7 +7,7 @@
  const overview=C.view.levels.find(v=>v.overview)||C.view.levels[0];
  let parts=new Map(C.parts.map(p=>[p.id,p])),groups=new Map(C.groups.map(g=>[g.id,g])),rooms=new Map(C.rooms.map(r=>[r.id,r]));
  let s=null,raw=null,level=overview.id,loadError=null,lastSave=0,lastUI=0,saveError='',debugSpeed=1,activeTab=null,busy=false,toastTimer;
- let owner=false,ready=false,releaseLock=null;const camera={x:0,y:0,zoom:1};
+ let owner=false,ready=false,releaseLock=null;const camera={x:0,y:0,zoom:1};let focusPending=true,autoFrame=true;
  let selectionPlan=null,locationId=null,variantId=null,previewChoice=null,picking=false;
  let previewId=null,previewReturn=null,interactionId=null,observed=null,unseen=[],resultIds=[];const dialogTriggers=new Map(),suppressedCloses=new Set();
  const names={preparing:'安排搬迁与设施停工',work:'逐件施工',settling:'入住与返家',install:'搬运安装',dismantle:'拆解回收',move:'完整搬出家具',reuse:'复用家具',relocate:'搬迁中'};
@@ -28,7 +28,7 @@
     finally{busy=false;}
     $('ownership-banner').hidden=true;ready=true;resetClock();if(s.lastOffline.seconds>=5)showOffline();
    }else{s=original;text('ownership-banner','另一个标签页正在管理此小镇。本页只读；关闭另一页后刷新即可接管。');$('ownership-banner').hidden=false;}
-  }catch(e){loadError=e.message;text('load-error-text',e.message);ready=false;if(!raw)s=null;}$('load-error').hidden=!loadError;refresh();}
+  }catch(e){loadError=e.message;text('load-error-text',e.message);ready=false;if(!raw)s=null;}$('load-error').hidden=!loadError;focusPending=true;refresh();}
  function persist(){if(!s||loadError||!owner||!ready||busy)return false;const old=s.wallTime;try{s.wallTime=Math.max(old,Date.now()-clock.debt/debugSpeed*1000);localStorage.setItem(key,E.save(s,C));lastSave=s.time;saveError='';return true;}catch(e){s.wallTime=old;saveError='保存失败：'+e.message;return false;}}
  function capture(){T.capture(clock,performance.now(),!!s&&owner&&ready&&!s.paused&&!busy,debugSpeed);if(s&&owner&&ready&&!busy)T.pump(clock,s,{advance:(state,dt)=>E.advance(state,dt,C)},240);}
  function act(f){capture();if(blocked()){toast(busy?'正在完成调试操作，请稍候。':'正在补算小镇进度，请稍候再操作。');return;}const result=f();persist();refresh();return result;}
@@ -37,7 +37,7 @@
   if(!owner)throw Error('本页只读，不能写入小镇');I.baseline(next,Date.now());
   const encoded=E.save(next,C),original=s?E.save(s,C):raw;
   if(original!==null&&original!==undefined)localStorage.setItem(backup,original);
-  localStorage.setItem(key,encoded);s=next;if(resetNotifications){initNotices(next,true);selectionPlan=null;locationId=null;variantId=null;previewChoice=null;previewReturn=null;}ready=true;raw=null;loadError=null;saveError='';resetClock();$('load-error').hidden=true;
+  localStorage.setItem(key,encoded);s=next;if(resetNotifications){focusPending=true;initNotices(next,true);selectionPlan=null;locationId=null;variantId=null;previewChoice=null;previewReturn=null;}ready=true;raw=null;loadError=null;saveError='';resetClock();$('load-error').hidden=true;
  }
  function confirmAction(message){
   const dialog=$('confirm-dialog');text('confirm-message',message);dialog.returnValue='';
@@ -146,7 +146,20 @@
   const row=document.querySelector('#project-list .current');if(s.project&&row){row.querySelector('.project-row-state').textContent=info.label;row.querySelector('.project-row-detail').textContent=info.detail;row.querySelector('.task-count').textContent=info.percent===null?'已结束施工任务 '+s.project.at+' / '+E.currentPlan(s,C).tasks.length+' 项；'+(s.project.at===E.currentPlan(s,C).tasks.length?'等待当前阶段完成':'准备完成后自动施工'):'施工任务进度 '+info.percent+'% · '+s.project.at+' / '+E.currentPlan(s,C).tasks.length+' 项已结束；剩余用料：'+formatCost(remainingCost());const progress=row.querySelector('progress');progress.hidden=info.percent===null;progress.value=info.percent||0;}
   $('build-empty').hidden=!!s.project||!!resultIds.length||available.some(p=>!planReason(p));text('build-empty',info.detail);text('saved-queue','同时只建造一项；开窗不暂停小镇，完工后由你选择下一项。');
  }
- function setView(id){level=id;Object.assign(camera,{x:0,y:0,zoom:1});for(const b of $('views').children)b.setAttribute('aria-pressed',String(b.dataset.level===level));if(s){R.draw(canvas,s,C,level,camera);updateVisitors();}}
+ function focusScene(){
+  autoFrame=true;C=E.scene(s,B);level=overview.id;const target=R.focalBuilding(s,C),base=overview.rect,aspect=camera.aspect||base[2]/base[3];
+  Object.assign(camera,{x:target.x-base[0]-base[2]/2,y:target.y-base[1]-base[3]/2,zoom:Math.max(.75,Math.min(3,Math.max(base[2],base[3]*aspect)/Math.max(target.width+160,canvas.clientWidth>700?560:320,240*aspect)))});
+ }
+ function resetView(){focusScene();refresh();}
+ function positionSupplies(){
+  const tray=$('site-supplies'),target=R.focalBuilding(s,C),rect=R.viewRect(s,C,level,camera),selected=C.view.levels.find(v=>v.id===level);
+  const bounds=canvas.getBoundingClientRect(),scene=document.querySelector('.landscape').getBoundingClientRect(),scale=scene.width/document.querySelector('.landscape').offsetWidth;
+  const x=(target.x-rect[0])/rect[2],y=(target.floor-rect[1])/rect[3];
+  tray.hidden=x<0||x>1||y<0||y>1||!!selected.yRange&&(target.floor<selected.yRange[0]||target.floor>selected.yRange[1]);
+  tray.style.left=((bounds.left-scene.left)/scale+Math.max(110,Math.min(bounds.width/scale-110,x*bounds.width/scale)))+'px';
+  tray.style.top=((bounds.top-scene.top)/scale+Math.min(y*bounds.height/scale+12,bounds.height/scale-tray.offsetHeight-12))+'px';
+ }
+ function setView(id){autoFrame=false;level=id;Object.assign(camera,{x:0,y:0,zoom:1});for(const b of $('views').children)b.setAttribute('aria-pressed',String(b.dataset.level===level));if(s){R.draw(canvas,s,C,level,camera);updateVisitors();}}
  function activity(pet){
   const a=pet.action;if(!a)return E.workStatus(s,pet,C);
   if(a.type==='production'){const r=C.recipes.find(r=>r.id===a.recipe);return r.name+(a.elapsed>=a.workEnd?' · 搬运交付':a.elapsed<2?' · 前往作业点':' · 作业中');}
@@ -265,10 +278,10 @@
   const rect=R.viewRect(s,C,level,camera),selected=C.view.levels.find(v=>v.id===level),b=canvas.getBoundingClientRect(),scene=document.querySelector('.landscape').getBoundingClientRect(),scale=scene.width/document.querySelector('.landscape').offsetWidth;
   return s.interactions.map(e=>{const pose=E.visitorPose(s,e),x=(b.left-scene.left+(pose.x-rect[0])/rect[2]*b.width)/scale,y=(b.top-scene.top+(pose.y-rect[1])/rect[3]*b.height)/scale;return {e,pose,x,y,visible:R.visitorVisible(pose,selected,rect,camera.overlays)};});
  }
- function focusVisitor(id){const e=s.interactions.find(e=>e.id===id);if(!e)return;setView(overview.id);const pose=E.visitorPose(s,e),rect=R.viewRect(s,C,level,camera);camera.x+=pose.x-(rect[0]+rect[2]/2);camera.y+=pose.y-(rect[1]+rect[3]*.65);refresh();canvas.focus();}
  function updateVisitors(){
+  positionSupplies();
   const bubbles=$('visitor-bubbles'),hints=$('visitor-hints'),shown=new Set();for(const [index,{e,pose,x,y,visible}]of visitorTargets().entries()){shown.add(e.id);let b=[...bubbles.children].find(n=>n.dataset.event===e.id);if(!b){b=el('button','visitor-bubble','点击互动');b.dataset.event=e.id;b.onpointerdown=event=>canvas.onpointerdown(event);b.onclick=event=>{if(event.detail===0)openInteraction(e.id,b);};bubbles.append(b);}b.hidden=!visible||!pose.arrived;b.style.left=x+'px';b.style.top=(y-38-index%2*34)+'px';b.setAttribute('aria-label',interactionName(e)+'，点击查看详情');
-   let hint=[...hints.children].find(n=>n.dataset.event===e.id);if(!hint){hint=el('button');hint.dataset.event=e.id;hint.onclick=()=>focusVisitor(e.id);hints.append(hint);}hint.hidden=visible;hint.textContent='来访 · '+(pose.arrived?'点击定位':'正在路上');hint.setAttribute('aria-label',interactionName(e)+'，切换视图并定位角色');
+   let hint=[...hints.children].find(n=>n.dataset.event===e.id);if(!hint){hint=el('button','visitor-card');hint.dataset.event=e.id;const portrait=el('canvas');portrait.width=24;portrait.height=24;portrait.setAttribute('aria-hidden','true');R.visitorPortrait(portrait,e);hint.append(portrait,el('strong','',({pickup:'送来材料',commission:'来访委托',assist:'整理工具'})[e.type]),el('small'));hint.onclick=()=>openInteraction(e.id,hint);hints.append(hint);}hint.querySelector('small').textContent=pose.arrived?'点击互动':'正在路上';hint.setAttribute('aria-label',interactionName(e)+'，'+(pose.arrived?'点击查看详情':'正在路上，可查看详情'));
   }for(const node of [...bubbles.children,...hints.children])if(!shown.has(node.dataset.event))node.remove();
  }
  function debugLimit(state,k){return Math.max(0,E.capacity(state,C)[k]-state.pets.reduce((n,p)=>n+(p.action?.output?.[k]||0),0));}
@@ -283,11 +296,12 @@
   text('debug-state',`模拟时间  ${timeLabel(s.time)}\n工程完成  ${s.completed.length} / ${C.plans.length}\n当前阶段  ${s.project?names[s.project.phase]+' · '+s.project.at:'无工程'}\n材料身份  ${s.materials.length} 个\n正在工作  ${s.pets.filter(p=>p.action).length} 位\n调试增加  ${formatCost(s.ledger.debug?.added||{})}\n调试移除  ${formatCost(s.ledger.debug?.removed||{})}`);
  }
  function refresh(){
-  if(s){C=E.scene(s,B);parts=new Map(C.parts.map(p=>[p.id,p]));groups=new Map(C.groups.map(g=>[g.id,g]));rooms=new Map(C.rooms.map(r=>[r.id,r]));}
+  if(s){C=E.scene(s,B);if(focusPending){focusScene();focusPending=false;}parts=new Map(C.parts.map(p=>[p.id,p]));groups=new Map(C.groups.map(g=>[g.id,g]));rooms=new Map(C.rooms.map(r=>[r.id,r]));}
   for(const id of ['pause','resume-town','speed','priority','export-save','new-game'])$(id).disabled=blocked();
   for(const b of document.querySelectorAll('#project-badge,[data-tab],#open-journal,.resource-card'))b.disabled=!s;
   if(!s){$('pause-banner').hidden=true;updateDebug();return;}
   const stock=E.inventory(s,C,false),available=E.inventory(s,C);
+  text('supplies-title',s.project?'工地备料':'可用物资');for(const k of kinds){text('supply-'+k,available[k]);const item=$('supply-'+k).parentElement;item.title=C.materials[k]+'：'+available[k];item.classList.toggle('empty',!available[k]);}
   const cap=E.capacity(s,C);for(const k of kinds){text('stock-'+k,available[k]);text('stock-detail-'+k,`仓内 ${stock[k]}/${cap[k]} · 预留 ${E.reserved(s,k)}`);}
   text('town-time','小镇时间 '+timeLabel(s.time));text('pause',s.paused?'继续小镇':'暂停小镇');$('pause').setAttribute('aria-pressed',String(s.paused));$('pause-banner').hidden=!s.paused;
   $('speed').value=s.multiplier;$('priority').value=s.gatherPriority;const changed=!!s.ledger.debug;
@@ -320,15 +334,16 @@
   for(const r of C.rooms){const row=el('article','room-card');row.dataset.room=r.id;const head=el('div','room-heading');head.append(el('strong','',r.name),el('span','state-pill'));const b=el('button','','查看所在区域');b.onclick=()=>{$('management-dialog').close();setView(overview.id);const at=rooms.get(r.id).point,rect=R.viewRect(s,C,level,camera);camera.x+=at.x-(rect[0]+rect[2]/2);camera.y+=at.y-32-(rect[1]+rect[3]/2);refresh();canvas.focus();};row.append(head,el('p','room-beds'),el('p','room-detail'),b);$('rooms').append(row);}
   for(const l of C.view.levels){const b=el('button','',l.name);b.dataset.level=l.id;b.setAttribute('aria-pressed',String(l.id===level));b.onclick=()=>setView(l.id);$('views').append(b);}
   const redraw=()=>{if(s){R.draw(canvas,s,C,level,camera);updateVisitors();}};
-  const pan=delta=>{camera.x+=delta;redraw();};
-  $('pan-left').onclick=()=>pan(-96);$('pan-right').onclick=()=>pan(96);$('camera-reset').onclick=()=>setView(level);
-  const zoom=delta=>{camera.zoom=Math.max(.75,Math.min(3,camera.zoom+delta));redraw();};$('zoom-in').onclick=()=>zoom(.25);$('zoom-out').onclick=()=>zoom(-.25);
+  const pan=delta=>{autoFrame=false;camera.x+=delta;redraw();};
+  $('site-supplies').onclick=()=>setTab('storage',$('site-supplies'));
+  $('pan-left').onclick=()=>pan(-96);$('pan-right').onclick=()=>pan(96);$('camera-reset').onclick=resetView;
+  const zoom=delta=>{autoFrame=false;camera.zoom=Math.max(.75,Math.min(3,camera.zoom+delta));redraw();};$('zoom-in').onclick=()=>zoom(.25);$('zoom-out').onclick=()=>zoom(-.25);
   canvas.tabIndex=0;canvas.style.touchAction='none';let pointer=null;
   canvas.onpointerdown=e=>{if(pointer){pointer.drag=true;return;}const bubble=e.target.closest('.visitor-bubble');pointer={id:e.pointerId,x:e.clientX,y:e.clientY,pan:camera.x,py:camera.y,drag:false,eventId:bubble?.dataset.event,trigger:bubble||canvas};canvas.setPointerCapture(e.pointerId);};
   const hit=e=>{if(!s)return null;const scene=document.querySelector('.landscape').getBoundingClientRect(),scale=scene.width/document.querySelector('.landscape').offsetWidth,x=(e.clientX-scene.left)/scale,y=(e.clientY-scene.top)/scale;return visitorTargets().find(t=>t.visible&&t.pose.arrived&&Math.abs(t.x-x)<18&&y>t.y-30&&y<t.y+8);};
-  canvas.onpointermove=e=>{canvas.style.cursor=hit(e)?'pointer':'grab';if(!pointer||pointer.id!==e.pointerId)return;const dx=e.clientX-pointer.x,dy=e.clientY-pointer.y;if(Math.hypot(dx,dy)>5)pointer.drag=true;if(pointer.drag&&s){const rect=R.viewRect(s,C,level,camera),bounds=canvas.getBoundingClientRect();camera.x=pointer.pan-dx/bounds.width*rect[2];camera.y=pointer.py-dy/bounds.height*rect[3];redraw();}};
+  canvas.onpointermove=e=>{canvas.style.cursor=hit(e)?'pointer':'grab';if(!pointer||pointer.id!==e.pointerId)return;const dx=e.clientX-pointer.x,dy=e.clientY-pointer.y;if(Math.hypot(dx,dy)>5)pointer.drag=true;if(pointer.drag&&s){autoFrame=false;const rect=R.viewRect(s,C,level,camera),bounds=canvas.getBoundingClientRect();camera.x=pointer.pan-dx/bounds.width*rect[2];camera.y=pointer.py-dy/bounds.height*rect[3];redraw();}};
   canvas.onpointerup=e=>{if(!pointer||pointer.id!==e.pointerId)return;const previous=pointer;pointer=null;if(previous.drag)return;if(picking){const bounds=canvas.getBoundingClientRect(),rect=R.viewRect(s,C,level,camera),x=rect[0]+(e.clientX-bounds.left)/bounds.width*rect[2],y=rect[1]+(e.clientY-bounds.top)/bounds.height*rect[3],options=selectedOptions(),option=options.find((o,i)=>{const b=o.versions[0],v=root.TownLayout.variant(B,b);return Math.abs(x-b.x-v.width/2)<=22&&Math.abs(y-(b.y-80-i*22))<=10;})||options.find(o=>{const b=o.versions[0],v=root.TownLayout.variant(B,b);return x>=b.x&&x<=b.x+v.width&&y>=b.y-64&&y<=b.y;});if(option){locationId=option.id;variantId=null;picking=false;camera.candidates=[];$('placement-hint').hidden=true;setTab('extensions',canvas);}return;}if(previous.eventId){const event=s.interactions.find(q=>q.id===previous.eventId);if(event&&E.visitorPose(s,event).arrived)openInteraction(event.id,previous.trigger);}else{const target=hit(e);if(target)openInteraction(target.e.id);}};
-  canvas.onpointercancel=()=>{pointer=null;};canvas.onwheel=e=>{e.preventDefault();if(pointer)pointer.drag=true;zoom(e.deltaY<0?.25:-.25);};canvas.onkeydown=e=>{if(['ArrowLeft','ArrowRight','+','-','Home'].includes(e.key)){e.preventDefault();if(e.key==='ArrowLeft')pan(-32);if(e.key==='ArrowRight')pan(32);if(e.key==='+')zoom(.25);if(e.key==='-')zoom(-.25);if(e.key==='Home')setView(level);}};
+  canvas.onpointercancel=()=>{pointer=null;};canvas.onwheel=e=>{e.preventDefault();if(pointer)pointer.drag=true;zoom(e.deltaY<0?.25:-.25);};canvas.onkeydown=e=>{if(['ArrowLeft','ArrowRight','+','-','Home'].includes(e.key)){e.preventDefault();if(e.key==='ArrowLeft')pan(-32);if(e.key==='ArrowRight')pan(32);if(e.key==='+')zoom(.25);if(e.key==='-')zoom(-.25);if(e.key==='Home')resetView();}};
   $('placement-return').onclick=()=>{picking=false;camera.candidates=[];$('placement-hint').hidden=true;setTab('extensions',canvas);};
   for(const b of document.querySelectorAll('[data-tab]'))b.onclick=()=>setTab(b.dataset.tab,b);
   $('project-badge').onclick=()=>setTab('projects',$('project-badge'));$('open-journal').onclick=()=>setTab('journal',$('open-journal'));
@@ -338,7 +353,7 @@
   $('pause').onclick=()=>act(()=>{s.paused=!s.paused;});$('resume-town').onclick=()=>act(()=>{s.paused=false;});
   $('speed').onchange=()=>act(()=>{s.multiplier=Number($('speed').value);});$('priority').onchange=()=>act(()=>{s.gatherPriority=$('priority').value;});
   $('close-preview').onclick=()=>$('project-dialog').close();
-  $('start-project').onclick=()=>act(()=>{const choices=Object.fromEntries([...$('moving-choices').querySelectorAll('select')].map(sel=>[sel.dataset.pet,sel.value]));const paused=s.paused;s.paused=false;if(E.startProject(s,B,choices,previewId,previewChoice)){previewReturn=null;previewChoice=null;picking=false;camera.candidates=[];$('placement-hint').hidden=true;$('project-dialog').close();toast('已开工，小伙伴会自动准备材料和施工。');}else{s.paused=paused;text('preview-error',s.message);}});
+  $('start-project').onclick=()=>act(()=>{const choices=Object.fromEntries([...$('moving-choices').querySelectorAll('select')].map(sel=>[sel.dataset.pet,sel.value]));const paused=s.paused;s.paused=false;if(E.startProject(s,B,choices,previewId,previewChoice)){previewReturn=null;previewChoice=null;picking=false;camera.candidates=[];$('placement-hint').hidden=true;$('project-dialog').close();focusScene();toast('已开工，小伙伴会自动准备材料和施工。');}else{s.paused=paused;text('preview-error',s.message);}});
   $('export-save').onclick=()=>act(()=>{download(E.save(s,C),'little-town.json');text('settings-status','已导出当前进度。');});$('export-original').onclick=()=>download(raw||'','little-town-unreadable.json');
   $('new-game').onclick=restart;$('backup-restart').onclick=restart;
   $('import-save').onclick=()=>{if(owner&&!busy)$('import-file').click();};
@@ -357,7 +372,7 @@
  function fitGame(){
   const scale=innerWidth<800?1:Math.min(1,innerWidth/1280,innerHeight/720);document.documentElement.style.setProperty('--game-scale',scale);
   const viewport=document.querySelector('.game-viewport');viewport.style.width=innerWidth<800?'100%':1280*scale+'px';viewport.style.height=innerWidth<800?'100dvh':720*scale+'px';
-  const world=document.querySelector('.world'),bounds=world.getBoundingClientRect();camera.aspect=world.clientWidth/world.clientHeight;camera.overlays=[...document.querySelectorAll('.scene-management,.camera-tools')].map(e=>{const b=e.getBoundingClientRect();return [(b.left-bounds.left)/bounds.width,(b.top-bounds.top)/bounds.height,(b.right-bounds.left)/bounds.width,(b.bottom-bounds.top)/bounds.height];});canvas.width=Math.round(world.clientWidth*devicePixelRatio);canvas.height=Math.round(world.clientHeight*devicePixelRatio);if(s)refresh();
+  const world=document.querySelector('.world'),bounds=world.getBoundingClientRect();camera.aspect=world.clientWidth/world.clientHeight;camera.overlays=[...document.querySelectorAll('.scene-management,.camera-tools')].map(e=>{const b=e.getBoundingClientRect();return [(b.left-bounds.left)/bounds.width,(b.top-bounds.top)/bounds.height,(b.right-bounds.left)/bounds.width,(b.bottom-bounds.top)/bounds.height];});canvas.width=Math.round(world.clientWidth*devicePixelRatio);canvas.height=Math.round(world.clientHeight*devicePixelRatio);if(s){if(autoFrame)focusScene();refresh();}
  }
  fitGame();window.addEventListener('resize',fitGame);new ResizeObserver(fitGame).observe(document.querySelector('.world'));
  setup();refresh();
