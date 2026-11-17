@@ -21,7 +21,13 @@
  function placementError(c,s,b,{reserve=true}={}){
   const v=variant(c,b);if(!v)return '建筑尺寸不存在';
   if(![256,240,192].includes(b.y)||!Number.isInteger(b.x/16))return '不支持的标高或施工网格';
-  if(b.id===c.root.slot)return b.x===c.root.x&&b.y===c.root.y?null:'首栋起建位不匹配';
+  if(b.id===c.root.slot){
+   if(b.y!==c.root.y||b.connection)return '首栋小屋需要放在地面';
+   const rects=[body(c,b),[b.x-16,b.y-32,16,48]],protectedSites=[[24,240,104,40],...c.recipes.filter(r=>r.point).map(r=>[r.point.x-8,r.point.y-16,16,24])];
+   if(rects.some(a=>protectedSites.some(r=>overlap(a,r))))return '占用营地或资源作业点';
+   if(s.buildings.some(other=>other.id!==b.id&&rects.some(a=>occupied(c,other).some(z=>!(z.kind==='connection'&&other.connection?.parent===b.id)&&overlap(a,z.rect)))))return '建筑或入口与已有建筑重叠';
+   return null;
+  }
   const co=b.connection,parent=s.buildings.find(p=>p.id===co?.parent),pv=parent&&variant(c,parent),port=pv?.ports.find(p=>p.id===co?.port);
   if(!parent||!port||!port.types.includes(co.type))return '没有匹配的连接位';
   if(!c.connections[co.type]?.gaps.includes(co.gap))return '连接跨度超限';
@@ -52,12 +58,25 @@
   }
   return null;
  }
- function rawCandidates(c,s,slotId,versions,opts={}){
+ function candidateShapes(c,s,slotId,versions,opts={}){
   const slot=c.slots.find(slot=>slot.id===slotId),out=[];
   for(const parent of s.buildings.filter(b=>opts.future||s.completed.some(done=>c.plans.find(p=>p.id===done.id)?.slot===b.id)))for(const port of variant(c,parent).ports.filter(port=>port.id!==parent.connection?.targetPort))for(const type of port.types.filter(type=>!(parent.id===c.root.slot&&port===variant(c,parent).ports[0]&&type==='step')))for(const gap of c.connections[type].gaps)for(const v of versions){
    const b={id:slot.id,template:slot.template,variant:v.id,...connection(c,parent,port,v,type,gap)};
-   const error=placementError(c,s,b,opts);if(!error)out.push(b);
+   out.push(b);
   }return out;
+ }
+ function rawCandidates(c,s,slotId,versions,opts={}){return candidateShapes(c,s,slotId,versions,opts).filter(b=>!placementError(c,s,b,opts));}
+ function placementAt(c,s,planId,variantId,point){
+  const plan=c.plans.find(p=>p.id===planId),slot=c.slots.find(b=>b.id===plan?.slot),v=slot&&c.templates.find(t=>t.id===slot.template).variants.find(v=>v.id===variantId);
+  if(!v||!Number.isFinite(point?.x)||!Number.isFinite(point?.y))return {error:'请选择有效建筑、尺寸和位置'};
+  let building={id:slot.id,template:slot.template,variant:v.id,x:Math.round((point.x-v.width/2)/16)*16,y:Math.round((point.y+v.height/2)/16)*16};
+  if(slot.id===c.root.slot){if(Math.abs(building.y-c.root.y)<=16)building.y=c.root.y;}
+  else{
+   const nearby=candidateShapes(c,s,slot.id,[v]).filter(b=>Math.abs(b.x-building.x)<=16&&Math.abs(b.y-building.y)<=16).map(b=>({building:b,error:placementError(c,s,b),distance:Math.hypot(b.x-building.x,b.y-building.y)})).sort((a,b)=>a.distance-b.distance||Number(!!a.error)-Number(!!b.error)||a.building.x-b.building.x||a.building.y-b.building.y);
+   if(!nearby.length)return {building,error:'请靠近已完工建筑的侧面或上方，预留通路与支撑空间'};
+   return {building:nearby[0].building,error:nearby[0].error};
+  }
+  return {building,error:placementError(c,s,building)};
  }
  function candidates(c,s,planId){
   const plan=c.plans.find(p=>p.id===planId);if(!plan||plan.mode!=='build'||plan.slot===c.root.slot)return [];
@@ -65,7 +84,7 @@
   const slot=c.slots.find(slot=>slot.id===plan.slot),t=c.templates.find(t=>t.id===slot.template),all=rawCandidates(c,s,slot.id,t.variants),locations=new Map();
   for(const b of all){const key=[b.connection.parent,b.connection.port,b.connection.type,b.connection.gap].join(':');if(!locations.has(key))locations.set(key,[]);locations.get(key).push(b);}
   const signature=JSON.stringify(s.buildings.map(b=>[b.id,b.x,b.y,b.variant,b.connection]));
-  return [...locations].map(([key,versions])=>({id:key,rank:hash(s.layout.seed+'|'+signature+'|'+key),versions})).sort((a,b)=>a.rank-b.rank||a.id.localeCompare(b.id)).slice(0,3);
+  return [...locations].map(([key,versions])=>({id:key,rank:hash(s.layout.seed+'|'+signature+'|'+key),versions})).sort((a,b)=>a.rank-b.rank||a.id.localeCompare(b.id));
  }
  function compile(base,s,pending=null){
   if(base.compiled)return base;const c=clone(base);c.compiled=true;c.source=base;c.parts=[];c.groups=[];c.beds=clone(base.campBeds);c.rooms=[clone(base.camp)];c.bonus=[];
@@ -131,5 +150,5 @@
    q.tasks.forEach((t,i)=>{t.id=id(q.id,'task-'+i);t.deps=i?[id(q.id,'task-'+(i-1))]:[];});return q;
   });return c;
  }
- const api={compile,candidates,placementError,variant,body,occupied,overlap,hash};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.TownLayout=api;
+ const api={compile,candidates,placementAt,placementError,variant,body,occupied,overlap,hash};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.TownLayout=api;
 })(globalThis);

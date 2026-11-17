@@ -99,13 +99,10 @@
  function draw(canvas,s,cfg,level='all',camera={}){
   const c=canvas.getContext('2d'),E=root.TownGrowthEngine,v=cfg.view,selected=v.levels.find(l=>l.id===level)||v.levels[0],rect=viewRect(s,cfg,level,camera);
   c.imageSmoothingEnabled=false;c.clearRect(0,0,canvas.width,canvas.height);c.save();c.scale(canvas.width/rect[2],canvas.height/rect[3]);c.translate(-rect[0],-rect[1]);
-  box(c,-800,-400,2200,1100,v.palette.sky);box(c,-800,185,2200,87,['#466269','#4d6260','#495b69'][s.layout.palette]);
+  box(c,rect[0],rect[1],rect[2]+1,rect[3]+1,v.palette.sky);box(c,rect[0],185,rect[2]+1,87,['#466269','#4d6260','#495b69'][s.layout.palette]);
   for(const item of s.layout.environment)if(item.type==='tree')tree(c,item.x,item.y,item.size,s.time);;
-  box(c,-800,272,2200,400,v.palette.ground);box(c,-800,272,2200,2,'#72836a');
+  box(c,rect[0],272,rect[2]+1,Math.max(0,rect[1]+rect[3]-272)+1,v.palette.ground);box(c,rect[0],272,rect[2]+1,2,'#72836a');
   for(const item of s.layout.environment)if(item.type==='grass')box(c,item.x,item.y,4,2,'#6a8665');else if(item.type==='stone')box(c,item.x,item.y,7,3,'#73867a');
-  for(const [i,option] of (camera.candidates||[]).entries()){
-   const b=option.versions[0],v=root.TownLayout.variant(cfg.source||cfg,b);c.fillStyle='#82cbb72b';c.fillRect(b.x,b.y-64,v.width,64);c.strokeStyle='#a8e1b5';c.setLineDash([4,3]);c.strokeRect(b.x,b.y-64,v.width,64);c.setLineDash([]);c.font='10px monospace';c.fillStyle='#e9e6bf';const mx=b.x+v.width/2,my=b.y-80-i*22;box(c,mx-20,my-8,40,16,'#416354');c.fillStyle='#f5e4b7';c.fillText('位置 '+(i+1),mx-18,my+3);
-  }
   // Permanent camp and short forest paths are scenery, never an instant finished house.
   polygon(c,[[34,270],[60,240],[85,270]],'#a28f6d');polygon(c,[[60,240],[60,270],[78,270]],'#716c56');box(c,56,258,9,14,'#39463a');
   for(let i=0;i<4;i++)box(c,90+i*21,274,14,2,'#9d967c');
@@ -116,6 +113,13 @@
   const ordered=cfg.parts.filter(p=>s.objects[p.id].status==='installed'&&visible(s.objects[p.id])).sort((a,b)=>(a.layer??2)-(b.layer??2)||a.y-b.y);
   if(s.project){const target=focalBuilding(s,cfg);if(visible({room:target.id})){c.strokeStyle='#c8b57e';c.setLineDash([3,4]);c.strokeRect(target.x-target.width/2,target.y-32,target.width,64);c.setLineDash([]);}}
   for(const p of ordered){const o=s.objects[p.id];c.globalAlpha=E.roomAvailable(s,o.room,cfg)?1:.55;part(c,p,o,s.time);}c.globalAlpha=1;
+  if(camera.placement?.building){
+   const {building:b,error}=camera.placement,v=root.TownLayout.variant(cfg.source,b),color=error?'#ed947d':'#a8e1b5';
+   c.globalAlpha=.5;for(const p of [...v.parts].sort((a,b)=>(a.layer??2)-(b.layer??2)))part(c,p,{x:b.x+p.x,y:b.y+p.y},s.time);c.globalAlpha=1;
+   c.strokeStyle=color;c.lineWidth=1.5;c.setLineDash([4,3]);c.strokeRect(b.x,b.y-v.height,v.width,v.height);
+   if(b.connection){const points=b.connection.route;c.beginPath();points.forEach((p,i)=>i?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y));c.stroke();}
+   c.setLineDash([]);c.lineWidth=1;c.fillStyle=color;c.font='8px monospace';c.fillText(error?'位置不可用':'可建造 · 点击确认',b.x,b.y-v.height-8);
+  }
   const garden=cfg.plans.find(p=>p.effect?.residents&&s.completed.some(q=>q.id===p.id));if(garden)for(let i=0;i<4;i++){const room=cfg.rooms.find(r=>r.id===garden.effectRoom),x=room.point.x-20+i*11,y=room.point.y-5;box(c,x,y,2,5,'#83a776');box(c,x-1,y-2,4,3,s.gardenStyle?'#e9c88e':'#c99ca5');}
   for(const event of [...s.interactionHistory.filter(e=>e.visitor&&e.resolvedAt+8>s.time),...s.interactions]){
    const pose=E.visitorPose(s,event);if(pose.gone||!visitorVisible(pose,selected,rect,camera.overlays))continue;

@@ -93,11 +93,12 @@
  function preview(s,c=CONFIG.create(),planId=null,choice=null){
   const base=c.compiled?c.source:c,original=scene(s,base),def=base.plans.find(p=>p.id===(planId||currentPlan(s,original)?.id));if(!def)return null;
   let building=null,error=null;
-  if(def.mode==='build'&&def.slot!==base.root.slot&&!s.buildings.some(b=>b.id===def.slot)){
+  if(def.mode==='build'&&(def.slot===base.root.slot||!s.buildings.some(b=>b.id===def.slot))){
    const options=candidates(s,base,def.id);building=choice||null;
-   if(!building)error=options.length?'请选择建筑尺寸和相邻位置。':'没有合法位置：主体、承托或连接空间不足。';
-   else if(!options.some(o=>o.versions.some(b=>same(b,building))))error='所选位置已失效，请返回选址';
+   if(!building&&def.slot!==base.root.slot)error=options.length?'请移动建筑，选择尺寸和相邻位置。':'没有合法位置：主体、承托或连接空间不足。';
+   else if(building){const slot=base.slots.find(b=>b.id===def.slot);if(building.id!==slot.id||building.template!==slot.template)error='建筑身份与工程不匹配';else if(def.slot!==base.root.slot&&!options.some(o=>o.versions.some(b=>same(b,building))))error='所选位置已失效，请重新选址';}
    if(building)error=error||L.placementError(base,s,building);
+   if(error)building=null;
   }
   let state=s;
   if(def.mode==='comfort'&&choice){if(!s.buildings.some(b=>b.id===choice.room&&b.template===def.targetTemplate))error='请选择已建成住宅';else state={...s,improvements:{...s.improvements,[def.id]:{room:choice.room,settle:s.pets.filter(p=>original.beds.some(b=>b.id===p.home&&b.room===choice.room)).map(p=>({pet:p.id,bed:p.home}))}}};}
@@ -116,10 +117,10 @@
   if(s.project||s.paused)return false;const check=preview(s,c,planId,choice);if(!check)return false;const p=check.plan;
   if(completed(s,p.id)||!p.requires.every(id=>completed(s,id)))return false;
   if(check.error){note(s,check.error);return false;}const housing=preflight(s,p,check.config,choices);if(housing.error){note(s,housing.error);return false;}
-  if(check.building)s.buildings.push(clone(check.building));
+  if(check.building){const at=s.buildings.findIndex(b=>b.id===check.building.id);if(at<0)s.buildings.push(clone(check.building));else s.buildings[at]=clone(check.building);}
   if(check.improvement)s.improvements[p.id]=clone(check.improvement);
   syncObjects(s,scene(s,c));
-  s.project={plan:p.id,phase:'preparing',at:0,locked:false,disabled:false,affected:clone(p.disable),moves:housing.moves,oldHomes:s.pets.map(p=>({pet:p.id,home:p.home})),consumed:zero(c),sources:{},startedAt:s.time,building:check.building?.id||null};
+  s.project={plan:p.id,phase:'preparing',at:0,locked:false,disabled:false,affected:clone(p.disable),moves:housing.moves,oldHomes:s.pets.map(p=>({pet:p.id,home:p.home})),consumed:zero(c),sources:{},startedAt:s.time,building:check.building?.id===(c.source||c).root.slot?null:check.building?.id||null};
   note(s,'准备工程：安排安全住处，等待受影响批次交付。');return true;
  }
  function cancelProject(s,c=CONFIG.create()){
