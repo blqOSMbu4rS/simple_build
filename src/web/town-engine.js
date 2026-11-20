@@ -136,6 +136,14 @@
   for(const m of list)m.state='yard';if(list.length)note(s,'材料转存营地料垛，仍可供施工与加工使用。');return !!list.length;
  }
  function facility(s,r,c){if(!r.facility)return {point:r.point,room:null};const g=c.groups.find(g=>g.capability===r.facility&&groupReady(s,g)&&roomAvailable(s,s.objects[g.parts[0]].room,c));if(!g)return null;const o=s.objects[g.parts[0]];return {id:g.id,room:o.room,point:{x:o.x+8,y:o.y+16}};}
+ function closedWorkplace(s,pet,c){
+  if(!s.project?.disabled)return null;
+  const def=c.pets.find(p=>p.id===pet.id),recipes=c.recipes.filter(r=>def.capabilities.includes(r.capability));
+  if(recipes.some(r=>facility(s,r,c)))return null;
+  const station=c.groups.find(g=>g.capability&&recipes.some(r=>r.facility===g.capability)&&
+   disabled(s,s.objects[g.parts[0]].room)&&groupReady(s,g));
+  return station?data(c).rooms.get(s.objects[station.parts[0]].room):null;
+ }
  function closingSupply(s,c){
   const project=s.project;
   if(project?.phase!=='preparing'||!project.affected.length)return [];
@@ -208,11 +216,17 @@
    travelEnd,workEnd,total:workEnd+travelEnd,visited:false});
   return true;
  }
- function actionPoint(s,pet,c){const a=pet.action;if(!a)return {x:pet.x,y:pet.y,phase:'rest'};
+ function actionPoint(s,pet,c){
+  const a=pet.action;
+  if(!a){
+   const pose={x:pet.x,y:pet.y,phase:'rest'},closed=pet.home&&closedWorkplace(s,pet,c);
+   if(closed)pose.waitingFor=closed.id;
+   return pose;
+  }
   if(a.type==='relocate')return {...along(a.route,Math.min(1,a.elapsed/a.total)),phase:'walk'};
   if(a.type==='public-use'){
    if(a.elapsed<a.travelEnd)return {...along(a.route,a.elapsed/a.travelEnd),phase:'walk'};
-   if(a.elapsed<a.workEnd)return {...a.target,phase:data(c).rooms.get(a.room).activity.pose};
+   if(a.elapsed<a.workEnd)return {...a.target,phase:data(c).rooms.get(a.room).activity.pose,waitingFor:closedWorkplace(s,pet,c)?.id};
    return {...along(a.returnRoute,(a.elapsed-a.workEnd)/(a.total-a.workEnd)),phase:'walk'};
   }
   if(a.type==='production'){
@@ -226,10 +240,23 @@
   return {...a.target,phase:a.elapsed>=a.workEnd?'reveal':'install',hammer:a.elapsed<a.workEnd};
  }
  function workStatus(s,pet,c=CONFIG.create()){
-  if(pet.action){const a=pet.action;if(a.type==='production')return data(c).recipes.get(a.recipe).name+(a.minted?' · 正在运输交付':' · 正在作业');if(a.type==='public-use'){const room=data(c).rooms.get(a.room);return a.elapsed<a.travelEnd?'正在前往'+room.name:a.elapsed<a.workEnd?room.name+' · '+room.activity.label:'正在离开'+room.name;}return {relocate:'正在搬迁',install:'正在搬运安装',dismantle:'正在拆解回收',move:'正在完整搬出家具',reuse:'正在复用家具'}[a.type];}
+  const a=pet.action;
+  if(a){
+   if(a.type==='production')return data(c).recipes.get(a.recipe).name+(a.minted?' · 正在运输交付':' · 正在作业');
+   if(a.type==='public-use'){
+    const room=data(c).rooms.get(a.room),closed=closedWorkplace(s,pet,c);
+    const activity=a.elapsed<a.travelEnd?'正在前往'+room.name:a.elapsed<a.workEnd?room.name+' · '+room.activity.label:'正在离开'+room.name;
+    return closed?activity+'（等'+closed.name.split(' · ')[0]+'复工）':activity;
+   }
+   return {relocate:'正在搬迁',install:'正在搬运安装',dismantle:'正在拆解回收',move:'正在完整搬出家具',reuse:'正在复用家具'}[a.type];
+  }
   if(!pet.arrived)return '小屋建成后到访';if(!pet.home)return '来访 · 先安排可用床位';
   const recipes=c.recipes.filter(r=>c.pets.find(p=>p.id===pet.id).capabilities.includes(r.capability));
-  const usable=recipes.filter(r=>facility(s,r,c));if(!usable.length)return '等待对应作业设施建成';
+  const usable=recipes.filter(r=>facility(s,r,c));
+  if(!usable.length){
+   const closed=closedWorkplace(s,pet,c);
+   return closed?'等待'+closed.name.split(' · ')[0]+'复工':'等待对应作业设施建成';
+  }
   const inv=inventory(s,c),stock=inventory(s,c,false);
   if(usable.every(r=>!fits(s,r.output,c)))return '本批次仓位不足 · 等待用料或转存营地';
   const missing=usable.find(r=>Object.entries(r.input).some(([k,n])=>inv[k]<n));
@@ -320,7 +347,10 @@
   if(!s.project&&rooms.length&&beginPublicUse(s,pet,def,c,rooms))return;
   const recipes=c.recipes.filter(r=>def.capabilities.includes(r.capability)).sort((a,b)=>(b.priority||0)-(a.priority||0));
   if(s.gatherPriority!=='auto'&&def.capabilities.includes('build'))recipes.sort((a,b)=>Number(!!b.output[s.gatherPriority])-Number(!!a.output[s.gatherPriority]));
-  for(const r of recipes)if(beginRecipe(s,pet,r,c,stocking))break;
+  for(const r of recipes)if(beginRecipe(s,pet,r,c,stocking))return;
+  // Between batches a resident with no available work can use an open public place.
+  // Preparation and settling still have first claim on residents who need to move.
+  if(s.project?.phase==='work'&&rooms.length)beginPublicUse(s,pet,def,c,rooms);
  }
  function stableRecipes(s,c){return c.recipes.filter(r=>facility(s,r,c)&&s.pets.some(p=>p.arrived&&(!r.facility||p.home)&&c.pets.find(d=>d.id===p.id).capabilities.includes(r.capability)));}
  function generateInteraction(s,c,rooms){
@@ -398,10 +428,11 @@
   for(const pet of s.pets){
    const a=pet.action;
    if(!a){
-    if(!s.project&&pet.home){
+    const def=c.pets.find(p=>p.id===pet.id);
+    if(pet.home&&(!s.project||!def.capabilities.includes('build'))){
      const uses=s.publicUses.filter(u=>u.person===pet.id);
      const cooldown=uses.reduce((end,u)=>Math.max(end,u.last+25),0);
-     for(const r of eligiblePublicRooms(openPublicRooms(s,c),c.pets.find(p=>p.id===pet.id))){
+     for(const r of eligiblePublicRooms(openPublicRooms(s,c),def)){
       const at=Math.max(cooldown,(uses.find(u=>u.room===r.id)?.last??-Infinity)+r.activity.cooldown);
       if(at-s.time>1e-8)limit(at-s.time);
      }

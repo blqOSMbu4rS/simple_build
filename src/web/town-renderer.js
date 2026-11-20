@@ -88,6 +88,8 @@
   else{polygon(c,[[x-5,y-10],[x-5,y-16],[x-1,y-12]],def.color);polygon(c,[[x+1,y-12],[x+5,y-16],[x+5,y-10]],def.color);}
   box(c,x-2,y-10,1,1,'#34312d');box(c,x+2,y-10,1,1,'#34312d');box(c,x-2,y-7,5,2,'#e2cfad');box(c,x-3,y-2+step,2,2,'#aa8e72');box(c,x+2,y-2-step,2,2,'#aa8e72');
   box(c,x-3,y-5,6,3,def.species==='fox'?'#697e74':def.species==='cat'?'#9a7d87':'#708d92');
+  if(pose.phase==='work'){const reach=Math.floor(time*4)%2;box(c,x+2+reach*2,y-6+reach,4,2,def.color);}
+  if(pose.phase==='sit'){box(c,x-3,y-2,4,2,def.color);box(c,x+2,y-2,4,2,def.color);}
   if(def.scarf){box(c,x-5,y-7,10,2,'#b98759');box(c,x+3,y-5,2,4,'#e0ad72');}
   if(pose.phase==='sort'){const offset=Math.floor(time*4)%3;box(c,x+2,y-8+offset,9,3,'#c49359');box(c,x+8,y-8+offset,3,3,'#e3bf86');}
   if(pose.held==='W'&&root.TownPetWorkArt)root.TownPetWorkArt.timberOverlay(c,{log:{x:x+5,y:y-5,length:12,diameter:4}},time);
@@ -106,7 +108,7 @@
   pet(c,visitorStyle(event),{x:12,y:21,phase:'idle'},0);
  }
  function visitorStyle(e){return e.guest?{...e.guest,scarf:true}:{species:'cat',color:e.type==='pickup'?'#d3c39b':e.type==='assist'?'#8ec4b6':'#c79eaa'};}
- function caption(c,text,x,y){c.font='8px sans-serif';const w=c.measureText(text).width;box(c,x-w/2-3,y-8,w+6,11,'#2b4941');c.fillStyle='#f1dfb6';c.fillText(text,x-w/2,y);}
+ function caption(c,text,x,y,background='#2b4941'){c.font='8px sans-serif';const w=c.measureText(text).width;box(c,x-w/2-3,y-8,w+6,11,background);c.fillStyle='#f1dfb6';c.fillText(text,x-w/2,y);}
  function visitorVisible(p,selected,rect,overlays=[]){
   if(selected.plot||selected.yRange&&(p.y<selected.yRange[0]||p.y>selected.yRange[1]))return false;
   if(!rect)return true;const x=(p.x-rect[0])/rect[2],y=(p.y-rect[1])/rect[3];
@@ -146,17 +148,38 @@
   // Local lights have fixed positions and are evaluated from completed fixtures.
   for(const p of ordered.filter(p=>p.kind==='lamp')){c.globalAlpha=.12;box(c,p.x-9,p.y,30,22,'#ffd997');c.globalAlpha=1;part(c,p,s.objects[p.id],s.time);}
   const build=s.pets.find(p=>['install','dismantle','reuse','move'].includes(p.action?.type));
-  if(build){const a=build.action,p=cfg.parts.find(p=>p.id===a.part),pos=p&&s.objects[p.id];if(pos&&visible(pos)){c.strokeStyle=a.type==='dismantle'?'#d7957a':'#e6c888';c.setLineDash([2,2]);c.strokeRect(pos.x-.5,pos.y-.5,17,17);c.setLineDash([]);if(a.type==='install'){const pose=E.actionPoint(s,build,cfg);if(pose.hammer){c.globalAlpha=.5;part(c,p,pos,s.time);c.globalAlpha=1;}}}}
-  for(const petState of s.pets){if(!petState.arrived)continue;const def=cfg.pets.find(p=>p.id===petState.id),pose=E.actionPoint(s,petState,cfg);if(!selected.yRange||pose.y>=selected.yRange[0]&&pose.y<=selected.yRange[1]){
-   pet(c,def,pose,Math.floor(s.time*8)/8);
-   if(pose.phase==='sort'||pose.phase==='sit')caption(c,def.name,pose.x,pose.y-21);
-  }}
-  if(cfg.rooms.some(r=>r.activity&&s.completed.some(q=>cfg.plans.find(p=>p.id===q.id)?.slot===r.id))){
+  const workPart=build&&cfg.parts.find(p=>p.id===build.action.part);
+  if(workPart){
+   const pos=s.objects[workPart.id];
+   if(visible(pos)){
+    c.strokeStyle=build.action.type==='dismantle'?'#d7957a':'#e6c888';c.setLineDash([2,2]);c.strokeRect(pos.x-.5,pos.y-.5,17,17);c.setLineDash([]);
+    if(build.action.type==='install'&&E.actionPoint(s,build,cfg).hammer){c.globalAlpha=.5;part(c,workPart,pos,s.time);c.globalAlpha=1;}
+   }
+  }
+  const hasPublicSpace=cfg.rooms.some(r=>r.activity&&s.completed.some(q=>cfg.plans.find(p=>p.id===q.id)?.slot===r.id));
+  if(hasPublicSpace||s.project?.disabled){
    const origin=cfg.plans.find(p=>p.mode==='refit'&&s.completed.some(q=>q.id===p.id));
    for(const r of cfg.rooms.filter(r=>visible({room:r.id})&&E.roomReady(s,r.id,cfg))){
-    if(r.id===origin?.targetRoom)caption(c,'老屋 · 木作所',r.point.x,r.point.y-42);
-    else if(r.activity)caption(c,r.name.split(' · ')[0],r.point.x,r.point.y-43);
+    const closed=s.project?.disabled&&s.project.affected.includes(r.id);
+    const name=r.id===origin?.targetRoom?'老屋 · 木作所':r.name.split(' · ')[0];
+    if(closed)caption(c,name+' · 施工停用',r.point.x,r.point.y-43,'#654b36');
+    else if(hasPublicSpace&&(r.activity||r.id===origin?.targetRoom))caption(c,name,r.point.x,r.point.y-43);
    }
+  }
+  for(const petState of s.pets){
+   if(!petState.arrived)continue;
+   const def=cfg.pets.find(p=>p.id===petState.id),pose=E.actionPoint(s,petState,cfg);
+   if(selected.yRange&&(pose.y<selected.yRange[0]||pose.y>selected.yRange[1]))continue;
+   pet(c,def,pose,Math.floor(s.time*8)/8);
+   const a=petState.action;
+   let label;
+   if(pose.waitingFor)label='等'+cfg.rooms.find(r=>r.id===pose.waitingFor).name.split(' · ')[0]+'复工';
+   else if(a?.type==='public-use'&&a.visited&&a.elapsed<a.workEnd)label=cfg.rooms.find(r=>r.id===a.room).activity.label;
+   else if(pose.phase==='work')label=cfg.recipes.find(r=>r.id===a.recipe).name;
+   else if(a?.type==='install'&&(pose.hammer||pose.phase==='reveal'))label='安装'+(names[workPart.kind]||'构件');
+   else if(pose.hammer)label={dismantle:'拆解回收',move:'搬出家具',reuse:'安置家具'}[a.type];
+   // Idle residents wait beside the supplies, below the visitor interaction buttons.
+   if(label)caption(c,def.name+' · '+label,pose.x,pose.y+(pose.phase==='rest'?30:-21));
   }
   if(selected.overview){c.font='7px monospace';c.fillStyle='#c3c4ac';c.fillText('营地',44,288);c.fillText('木石料垛',92,288);}
   c.restore();canvas.dataset.level=selected.id;canvas.dataset.installed=String(ordered.length);
