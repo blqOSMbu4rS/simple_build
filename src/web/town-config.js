@@ -1,7 +1,7 @@
 /* Local building templates; identities and limits are scene data. */
 (function(root){
  'use strict';
- function create(){
+ function create({street=true}={}){
   const style={wood:'#986743',light:'#bb8758',wall:'#544d42',roof:'#496b69'};
   function unit(id,name,width,contents,extra={}){
    const parts=[],groups=[],beds=[],add=(id,x,y,kind,supports=[],more={})=>{parts.push({id,x,y,kind,supports,cost:{W:1},seconds:1.4,style:{...style},pixelRatio:30/16,...more});return id;};
@@ -41,6 +41,45 @@
    {id:'textile',name:'④ 增加纺织间',description:'独立织间与棉台，复用原生活桌。',slot:slots[2].id,base:true,requires:['growth-refit'],mode:'build',reuseTable:true},
    {id:'growth-comfort',name:'⑤ 改善住宅',description:'为选定住宅添床品、窗帘和灯具；保留床架。',base:true,requires:['textile'],mode:'comfort',targetTemplate:'housing'},
    ...slots.slice(3).map(slot=>({id:'build-'+slot.id,name:templates.find(t=>t.id===slot.template).name+(slot.template==='housing'?' · 第二栋':''),description:slot.template==='housing'?'新增空置床位，不增加居民。':({workshop:'现有木作岗位作业效率 +20%，配方和运输不变。',store:'四种仓库基础容量 ×4。',garden:'已入住居民作业效率 +5%，两种摆设。'})[slot.template],slot:slot.id,base:false,requires:['growth-comfort'],mode:'build'}))];
+  if(street){
+   function publicUnit(id,name,width,elements,activity,extra={}){
+    const v=unit(id,name,width,[],{allowsUpper:false,...extra});
+    v.parts=v.parts.filter(p=>!['wall','window','roof'].includes(p.kind));
+    v.structural=v.structural.filter(id=>v.parts.some(p=>p.id===id));
+    v.roof=[];
+    for(const [kind,x,y,material='W',layer=4] of elements){
+     const supports=y===-64&&material==='C'?v.beam:v.floor;
+     const part={id:kind+'-'+x+'-'+y,kind,x,y,cost:{[material]:1},seconds:1.4,style,pixelRatio:30/16,supports,layer};
+     v.parts.push(part);v.structural.push(part.id);
+    }
+    return {...v,activity};
+   }
+   const shed=publicUnit('frame-canopy','共用工棚',5,[
+    ...Array.from({length:5},(_,i)=>['canvas',i*16,-64,'C',3]),
+    ['timber-rack',48,-16],['timber-rack',64,-16]
+   ],{label:'整理木件',pose:'sort',capabilities:['woodwork'],point:{x:44,y:0},seconds:9,cooldown:55});
+   const court=publicUnit('under-tree','树下长桌',6,[
+    ['tree-trunk',64,-32,'W',0],['tree-crown',48,-64,'W',0],['tree-crown',64,-64,'W',0],['tree-crown',80,-64,'W',0],
+    ['long-table',32,-16],['long-table',48,-16],['long-table',64,-16],['stool',16,-16],['stool',80,-16]
+   ],{label:'在树下短坐',pose:'sit',capabilities:['woodwork','textile'],point:{x:24,y:0},seconds:11,cooldown:65});
+   court.parts=court.parts.filter(p=>p.kind!=='post'&&p.kind!=='beam');
+   court.structural=court.structural.filter(id=>court.parts.some(p=>p.id===id));
+   court.beam=[];
+   for(const part of court.parts.filter(p=>p.kind==='tree-crown'))part.supports=['tree-trunk-64--32'];
+   const stall=publicUnit('street-counter','街口交换摊',4,[
+    ...Array.from({length:4},(_,i)=>[i%2?'awning-light':'awning',i*16,-64,'C',3]),
+    ['stall-counter',16,-16],['stall-counter',32,-16],['market-crate',48,-16]
+   ],{label:'在摊前等候交换',point:{x:14,y:0},visitor:{id:'hazel',name:'榛榛',species:'bunny',color:'#cbb0d5'},input:{W:4},reward:{S:3}});
+   for(const [id,v,description] of [
+    ['shared-shed',shed,'手艺街 · 松松会到棚下整理木件。5 米宽，用木材搭木架和料架，用布料铺棚面。'],
+    ['court',court,'邻里小院 · 松松和绒绒会在作业批次之间轮流短坐。6 米宽，含树景、长桌和两张凳子。'],
+    ['exchange',stall,'来客小集 · 榛榛沿路来到摊前，用 3 石材交换 4 木材。4 米宽，含布篷和临街摊台。']
+   ]){
+    templates.push({id,name:v.name,limit:1,variants:[v]});
+    slots.push({id:id+'-1',template:id});
+    plans.push({id:'build-'+id,name:v.name,description,slot:id+'-1',base:false,requires:['growth-comfort'],mode:'build'});
+   }
+  }
   return {id:'forest-modular-v1',version:1,name:'林边相邻小镇',templates,slots,plans,root:{slot:slots[0].id,x:256,y:256},connections:{side:{gaps:[48,64],rise:0},step:{gaps:[64],rise:16},upper:{gaps:[64],rise:64}},
    materials:{W:'木材',S:'石材',Q:'棉花',C:'布料'},initial:{W:36,S:6,Q:0,C:0},capacity:{W:2100,S:600,Q:30,C:340},furnitureCapacity:3,yardCapacity:12,salvageCapacity:9,
    interactions:{interval:75,slots:3,pickup:3,pickupKinds:['W','S','Q'],commission:{W:4,S:3},reward:{S:3,W:5},assistBatches:3,assistEfficiency:.1},

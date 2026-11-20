@@ -35,7 +35,7 @@
   const s={format:'town-modular',version:1,configVersion:c.version,scene:c.id,signature:JSON.stringify(base),buildings,improvements:{},layout:layout(c,seed),eventRng:random(seed^0x93ab12),nextEvent:Math.round(c.interactions.interval/STEP),nextInteraction:1,interactions:[],interactionHistory:[],assists:{},decorations:[],gardenStyle:0,wallTime:0,lastOffline:null,ticks:0,time:0,remainder:0,paused:false,status:'running',multiplier:1,completed:[],project:null,nextMaterial:1,nextAction:1,
    objects:Object.fromEntries(c.parts.map(p=>[p.id,{id:p.id,status:'absent',x:p.x,y:p.y,room:p.room,supports:clone(p.supports),materials:[]}])) ,furniture:Object.fromEntries(c.groups.map(g=>[g.id,{id:g.id,status:'absent'}])),
    pets:c.pets.map(p=>({id:p.id,home:p.home||null,arrived:p.arrival===0,x:p.home?data(c).beds.get(p.home).point.x:136,y:272,action:null})),materials:[],
-   ledger:{created:z(),consumed:z(),lost:z(),rewards:z(),submitted:z(),recipes:Object.fromEntries(c.recipes.map(r=>[r.id,{started:0,finished:0}]))},regrowth:Object.fromEntries(c.recipes.map(r=>[r.id,0])),gatherPriority:'auto',message:'先建一间小屋，让来访的小伙伴安家。',events:[]};
+   ledger:{created:z(),consumed:z(),lost:z(),rewards:z(),submitted:z(),recipes:Object.fromEntries(c.recipes.map(r=>[r.id,{started:0,finished:0}]))},regrowth:Object.fromEntries(c.recipes.map(r=>[r.id,0])),gatherPriority:'auto',message:'先建一间小屋，让来访的小伙伴安家。',events:[],publicUses:[]};
   for(const k of kinds(c))mint(s,k,c.initial[k],'stock',null,'initial');return s;
  }
  function note(s,text){if(s.message===text)return;s.message=text;s.events.unshift({time:s.time,text});s.events.length=Math.min(s.events.length,16);}
@@ -136,8 +136,23 @@
   for(const m of list)m.state='yard';if(list.length)note(s,'材料转存营地料垛，仍可供施工与加工使用。');return !!list.length;
  }
  function facility(s,r,c){if(!r.facility)return {point:r.point,room:null};const g=c.groups.find(g=>g.capability===r.facility&&groupReady(s,g)&&roomAvailable(s,s.objects[g.parts[0]].room,c));if(!g)return null;const o=s.objects[g.parts[0]];return {id:g.id,room:o.room,point:{x:o.x+8,y:o.y+16}};}
- function beginRecipe(s,pet,r,c){
-  const def=c.pets.find(p=>p.id===pet.id),fac=facility(s,r,c);if(!pet.arrived||!def.capabilities.includes(r.capability)||!fac||r.facility&&!pet.home||s.project?.phase==='preparing'&&s.project.affected.includes(fac.room)||s.regrowth[r.id]>0)return false;
+ function closingSupply(s,c){
+  const project=s.project;
+  if(project?.phase!=='preparing'||!project.affected.length)return [];
+  const plan=currentPlan(s,c);
+  if(!data(c).rooms.get(plan.targetRoom).activity)return [];
+  const needed=zero(c),stock=inventory(s,c);
+  for(const task of plan.tasks)if(task.type==='install')
+   for(const [k,n] of Object.entries(data(c).parts.get(task.target).cost))needed[k]+=n;
+  const recipes=stableRecipes(s,c);
+  return kinds(c).filter(k=>{
+   if(stock[k]>=needed[k])return false;
+   const suppliers=recipes.filter(r=>r.output[k]);
+   return suppliers.length&&suppliers.every(r=>project.affected.includes(facility(s,r,c).room));
+  });
+ }
+ function beginRecipe(s,pet,r,c,stocking=false){
+  const def=c.pets.find(p=>p.id===pet.id),fac=facility(s,r,c);if(!pet.arrived||!def.capabilities.includes(r.capability)||!fac||r.facility&&!pet.home||s.project?.phase==='preparing'&&s.project.affected.includes(fac.room)&&!stocking||s.regrowth[r.id]>0)return false;
   if(fac.id&&s.pets.some(p=>p.action?.facility===fac.id)||!fits(s,r.output,c))return false;
   const inv=inventory(s,c);if(r.buffer&&Object.entries(r.output).every(([k,n])=>inv[k]+reserved(s,k)>=Math.min(capacity(s,c)[k],r.buffer*(capacity(s,c)[k]/c.capacity[k]))))return false;
   if(Object.entries(r.input).some(([k,n])=>inv[k]<n))return false;
@@ -167,8 +182,39 @@
   if(!enter)return null;return [clone(from),...exit,{x:104,y:272},...enter,clone(target)];
  }
  function distance(points){return points.slice(1).reduce((n,p,i)=>n+Math.hypot(p.x-points[i].x,p.y-points[i].y),0);}
+ function openPublicRooms(s,c){
+  return c.rooms.filter(r=>r.activity&&!s.project?.affected.includes(r.id)&&
+   c.plans.some(p=>p.slot===r.id&&completed(s,p.id))&&roomAvailable(s,r.id,c));
+ }
+ function recordPublicUse(s,room,person){
+  const use=s.publicUses.find(u=>u.room===room.id&&u.person===person);
+  if(use){use.last=s.time;return;}
+  s.publicUses.push({room:room.id,person,first:s.time,last:s.time});
+ }
+ function eligiblePublicRooms(rooms,def){
+  return rooms.filter(r=>r.activity.capabilities?.some(k=>def.capabilities.includes(k)));
+ }
+ function beginPublicUse(s,pet,def,c,rooms){
+  if(!pet.home)return false;
+  const prior=s.publicUses.filter(u=>u.person===pet.id);
+  if(prior.some(u=>s.time-u.last+1e-8<25))return false;
+  const room=eligiblePublicRooms(rooms,def).find(r=>
+   !s.pets.some(p=>p.action?.type==='public-use'&&p.action.room===r.id)&&
+   !prior.some(u=>u.room===r.id&&s.time-u.last+1e-8<r.activity.cooldown));
+  if(!room)return false;
+  const target=room.activity.point,route=travel(s,{x:pet.x,y:pet.y,escapeRoute:pet.escapeRoute},target,room.id,c),travelEnd=Math.max(1,distance(route)/125);
+  const workEnd=travelEnd+room.activity.seconds;
+  allocate(s,pet,'public-use',{room:room.id,target:clone(target),route,returnRoute:[...route].reverse(),
+   travelEnd,workEnd,total:workEnd+travelEnd,visited:false});
+  return true;
+ }
  function actionPoint(s,pet,c){const a=pet.action;if(!a)return {x:pet.x,y:pet.y,phase:'rest'};
   if(a.type==='relocate')return {...along(a.route,Math.min(1,a.elapsed/a.total)),phase:'walk'};
+  if(a.type==='public-use'){
+   if(a.elapsed<a.travelEnd)return {...along(a.route,a.elapsed/a.travelEnd),phase:'walk'};
+   if(a.elapsed<a.workEnd)return {...a.target,phase:data(c).rooms.get(a.room).activity.pose};
+   return {...along(a.returnRoute,(a.elapsed-a.workEnd)/(a.total-a.workEnd)),phase:'walk'};
+  }
   if(a.type==='production'){
    if(a.elapsed<2)return {...along(a.route,a.elapsed/2),phase:'walk'};
    if(a.elapsed>=a.workEnd)return {...along(a.returnRoute,Math.min(1,(a.elapsed-a.workEnd)/(a.total-a.workEnd))),phase:'deliver',held:Object.keys(a.output)[0]};
@@ -180,7 +226,7 @@
   return {...a.target,phase:a.elapsed>=a.workEnd?'reveal':'install',hammer:a.elapsed<a.workEnd};
  }
  function workStatus(s,pet,c=CONFIG.create()){
-  if(pet.action){const a=pet.action;if(a.type==='production')return data(c).recipes.get(a.recipe).name+(a.minted?' · 正在运输交付':' · 正在作业');return {relocate:'正在搬迁',install:'正在搬运安装',dismantle:'正在拆解回收',move:'正在完整搬出家具',reuse:'正在复用家具'}[a.type];}
+  if(pet.action){const a=pet.action;if(a.type==='production')return data(c).recipes.get(a.recipe).name+(a.minted?' · 正在运输交付':' · 正在作业');if(a.type==='public-use'){const room=data(c).rooms.get(a.room);return a.elapsed<a.travelEnd?'正在前往'+room.name:a.elapsed<a.workEnd?room.name+' · '+room.activity.label:'正在离开'+room.name;}return {relocate:'正在搬迁',install:'正在搬运安装',dismantle:'正在拆解回收',move:'正在完整搬出家具',reuse:'正在复用家具'}[a.type];}
   if(!pet.arrived)return '小屋建成后到访';if(!pet.home)return '来访 · 先安排可用床位';
   const recipes=c.recipes.filter(r=>c.pets.find(p=>p.id===pet.id).capabilities.includes(r.capability));
   const usable=recipes.filter(r=>facility(s,r,c));if(!usable.length)return '等待对应作业设施建成';
@@ -245,10 +291,12 @@
    g.parts.forEach((id,i)=>{const o=s.objects[id];o.status=a.type==='move'?'stored':'installed';if(a.positions){o.x=a.positions[i].x;o.y=a.positions[i].y;o.room=a.room;o.supports=clone(a.supports);}for(const m of s.materials)if(o.materials.includes(m.id))m.state=a.type==='move'?'furniture':'installed';});
   }
   if(['install','dismantle','move','reuse'].includes(a.type))s.project.at++;
-  const pose=actionPoint(s,pet,c);pet.x=pose.x;pet.y=pose.y;pet.escapeRoute=a.type==='relocate'?[...roomPath(s,data(c).beds.get(a.bed).room,c)].reverse():['install','move','reuse'].includes(a.type)?[...a.route].reverse():[];pet.action=null;return true;
+  const pose=actionPoint(s,pet,c);pet.x=pose.x;pet.y=pose.y;if(a.type!=='public-use')pet.escapeRoute=a.type==='relocate'?[...roomPath(s,data(c).beds.get(a.bed).room,c)].reverse():['install','move','reuse'].includes(a.type)?[...a.route].reverse():[];pet.action=null;return true;
  }
- function projectStep(s,c){const p=s.project;if(!p)return;const plan=c.plans.find(q=>q.id===p.plan);
+ function projectStep(s,c,supply){const p=s.project;if(!p)return;const plan=c.plans.find(q=>q.id===p.plan);
   if(p.phase==='preparing'){
+   if(s.pets.some(pet=>pet.action?.type==='public-use'))return;
+   if(supply.length){note(s,'临时停用设施前，正在备齐由该处生产的'+supply.map(k=>c.materials[k]).join('、')+'。');return;}
    if(s.pets.some(pet=>pet.action?.type==='production'&&p.affected.includes(pet.action.room))){note(s,'等待受影响设施的当前批次完成并交付。');return;}
    for(const move of p.moves){const pet=s.pets.find(p=>p.id===move.pet);if(pet.home!==move.bed){relocation(s,pet,move.bed,c);return;}}
    p.disabled=true;p.phase='work';
@@ -261,7 +309,7 @@
    s.project=null;note(s,plan.name+'完成，小镇继续生产。'+(plan.base?'可继续安排已解锁工程。':'扩展设施已投入使用。'));
   }
  }
- function schedule(s,pet,c){if(pet.action||!pet.arrived)return;const def=c.pets.find(p=>p.id===pet.id);
+ function schedule(s,pet,c,rooms,stocking){if(pet.action||!pet.arrived)return;const def=c.pets.find(p=>p.id===pet.id);
   if(def.capabilities.includes('build')&&s.project?.phase==='work'){
    const task=c.plans.find(p=>p.id===s.project.plan).tasks[s.project.at];if(task){const result=beginTask(s,pet,task,c);if(result===true)return;if(result&&typeof result==='object'){
      const k=Object.keys(result).find(k=>c.recipes.some(r=>!r.facility&&def.capabilities.includes(r.capability)&&r.output[k]));
@@ -269,19 +317,31 @@
     return;}
   }
   if(def.capabilities.includes('build')&&s.project)return;
+  if(!s.project&&rooms.length&&beginPublicUse(s,pet,def,c,rooms))return;
   const recipes=c.recipes.filter(r=>def.capabilities.includes(r.capability)).sort((a,b)=>(b.priority||0)-(a.priority||0));
   if(s.gatherPriority!=='auto'&&def.capabilities.includes('build'))recipes.sort((a,b)=>Number(!!b.output[s.gatherPriority])-Number(!!a.output[s.gatherPriority]));
-  for(const r of recipes)if(beginRecipe(s,pet,r,c))break;
+  for(const r of recipes)if(beginRecipe(s,pet,r,c,stocking))break;
  }
  function stableRecipes(s,c){return c.recipes.filter(r=>facility(s,r,c)&&s.pets.some(p=>p.arrived&&(!r.facility||p.home)&&c.pets.find(d=>d.id===p.id).capabilities.includes(r.capability)));}
- function generateInteraction(s,c){
-  if(s.ticks<s.nextEvent)return;s.nextEvent=s.ticks+Math.round(c.interactions.interval/STEP);if(s.interactions.length>=c.interactions.slots)return;
+ function generateInteraction(s,c,rooms){
+  if(s.ticks<s.nextEvent)return;s.nextEvent=s.ticks+Math.round(c.interactions.interval/STEP);
+  const market=!s.project&&rooms.find(r=>r.activity.visitor);
+  const camp=c.rooms.find(r=>r.initial).point;
+  if(market&&!s.interactions.some(e=>e.publicRoom)&&
+   !s.interactionHistory.some(e=>e.publicRoom&&(e.resolvedAt+c.interactions.interval>s.time||!visitorPose(s,e).gone))){
+   const {point,input,reward,visitor:guest}=market.activity,from={x:camp.x-72,y:camp.y},route=travel(s,from,point,market.id,c);
+   const returning=s.publicUses.some(u=>u.room===market.id&&u.person===guest.id);
+   s.interactions.push({id:'interaction-'+s.nextInteraction++,type:'commission',input:clone(input),reward:clone(reward),
+    progress:0,clicks:0,status:'ready',point:clone(point),createdAt:s.time,publicRoom:market.id,guest:clone(guest),returning,
+    visitor:{slot:c.interactions.slots,from,route,arriveAt:s.time+Math.max(10,distance(route)/92)}});
+  }
+  if(s.interactions.filter(e=>!e.publicRoom).length>=c.interactions.slots)return;
   const recipes=stableRecipes(s,c),resources=kinds(c).filter(k=>recipes.some(r=>r.output[k])),pool=[];
   for(const k of resources.filter(k=>c.interactions.pickupKinds.includes(k)))pool.push({type:'pickup',kind:k,reward:{[k]:c.interactions.pickup},input:{},progress:0,clicks:0,point:{x:72+resources.indexOf(k)*48,y:268}});
   for(const k of resources.filter(k=>c.interactions.commission[k])){const to=resources.find(q=>q!==k&&c.interactions.reward[q]);if(to)pool.push({type:'commission',input:{[k]:c.interactions.commission[k]},reward:{[to]:c.interactions.reward[to]},progress:0,clicks:0,point:{x:200,y:180}});}
   for(const r of recipes.filter(r=>r.facility))pool.push({type:'assist',recipe:r.id,assistKey:r.capability,input:{},reward:{},progress:0,clicks:3,point:{...facility(s,r,c).point}});
   s.eventRng=random(s.eventRng);const event=clone(pool[Math.floor(s.eventRng/4294967296*pool.length)]);if(!event)return;
-  const camp=c.rooms.find(r=>r.initial).point,used=new Set(s.interactions.map(e=>e.visitor?.slot));
+  const used=new Set(s.interactions.map(e=>e.visitor?.slot));
   const slot=Array.from({length:c.interactions.slots},(_,i)=>i).find(i=>!used.has(i)),point={x:camp.x+slot*40,y:camp.y};
   s.interactions.push({...event,point,id:'interaction-'+s.nextInteraction++,status:event.clicks?'active':'ready',createdAt:s.time,visitor:{slot,from:{x:camp.x-72,y:camp.y},arriveAt:s.time+10+slot*2}});
  }
@@ -289,11 +349,16 @@
   if(!e.visitor)return {...e.point,arrived:true,phase:'idle'};
   const leaving=e.resolvedAt!==undefined,start=leaving?e.resolvedAt:e.createdAt,end=leaving?start+8:e.visitor.arriveAt;
   const t=Math.max(0,Math.min(1,(s.time-start)/(end-start))),from=leaving?e.point:e.visitor.from,to=leaving?e.visitor.from:e.point;
+  if(e.visitor.route){
+   const arrivalFraction=leaving?Math.min(1,(start-e.createdAt)/(e.visitor.arriveAt-e.createdAt)):1;
+   return {...along(e.visitor.route,leaving?arrivalFraction*(1-t):t),arrived:!leaving&&t===1,phase:t<1?'walk':'idle',gone:leaving&&t===1};
+  }
   return {x:from.x+(to.x-from.x)*t,y:from.y+(to.y-from.y)*t,arrived:!leaving&&t===1,phase:t<1?'walk':'idle',gone:leaving&&t===1};
  }
  function protectedCost(s,c){if(!s.project)return {};const busy=s.pets.some(p=>['install','dismantle','move','reuse'].includes(p.action?.type)),t=currentPlan(s,c)?.tasks.slice(s.project.at+Number(busy)).find(t=>t.type==='install');return t?data(c).parts.get(t.target).cost:{};}
  function interactionCheck(s,id,c=CONFIG.create()){
   const e=s.interactions.find(e=>e.id===id);if(!e)return {error:'该互动已处理'};if(!visitorPose(s,e).arrived)return {error:'来访角色正在路上，到达后才可互动'};if(e.status!=='ready')return {error:'还需整理 '+(e.clicks-e.progress)+' 次'};
+  if(e.publicRoom&&!roomAvailable(s,e.publicRoom,c))return {error:'入口施工中，接通后可继续交换'};
   if(e.type==='assist'&&(s.assists[e.assistKey]||0)>0)return {error:'同类协助尚有 '+s.assists[e.assistKey]+' 批，不能叠加'};
   const stock=inventory(s,c),protect=protectedCost(s,c),missing={};for(const[k,n]of Object.entries(e.input))if(stock[k]-(protect[k]||0)<n)missing[k]=n-Math.max(0,stock[k]-(protect[k]||0));
   if(Object.keys(missing).length)return {error:'保护下一项施工用料；尚差 '+Object.entries(missing).map(([k,n])=>c.materials[k]+' '+n).join('、')};
@@ -310,16 +375,47 @@
   s.interactionHistory.push({...clone(e),status:'claimed',resolvedAt:s.time});s.interactions=s.interactions.filter(q=>q!==e);s.nextEvent=Math.max(s.nextEvent,s.ticks+Math.round(c.interactions.interval/STEP));note(s,'互动已结算'+(e.type==='assist'?'：接下来三个批次作业效率 +10%。':'，材料已入仓。'));return true;
  }
  function abandonInteraction(s,id,c=CONFIG.create()){const e=s.interactions.find(e=>e.id===id);if(s.paused||!e)return false;s.interactionHistory.push({...clone(e),status:'abandoned',resolvedAt:s.time});s.interactions=s.interactions.filter(q=>q!==e);s.nextEvent=Math.max(s.nextEvent,s.ticks+Math.round(c.interactions.interval/STEP));return true;}
- function tick(s,c,count=1){s.ticks+=count;s.time=s.ticks*STEP;
+ function tick(s,c,count=1){const previous=s.time;s.ticks+=count;s.time=s.ticks*STEP;
   for(const id of Object.keys(s.regrowth))s.regrowth[id]=Math.max(0,Math.round(s.regrowth[id]/STEP)-count)*STEP;
   for(const pet of s.pets){const a=pet.action;if(!a)continue;const rate=['install','dismantle','move','reuse'].includes(a.type)?s.multiplier:1;a.elapsedTicks+=count*rate;a.elapsed=Math.min(a.total,a.elapsedTicks*STEP);
    if(a.type==='production'&&!a.minted&&a.elapsed+1e-8>=a.workEnd){for(const[k,n]of Object.entries(a.output))a.materials.push(...mint(s,k,n,'transit',a.id,a.recipe));a.minted=true;s.ledger.recipes[a.recipe].finished++;}
+   if(a.type==='public-use'&&!a.visited&&a.elapsed+1e-8>=a.travelEnd){
+    a.visited=true;recordPublicUse(s,data(c).rooms.get(a.room),pet.id);
+   }
    if(a.elapsed+1e-8>=a.total)completeAction(s,pet,a,c);
   }
-  projectStep(s,c);for(const pet of s.pets)schedule(s,pet,c);generateInteraction(s,c);
+  for(const e of s.interactions)if(e.publicRoom&&previous<e.visitor.arriveAt&&s.time>=e.visitor.arriveAt)
+   recordPublicUse(s,data(c).rooms.get(e.publicRoom),e.guest.id);
+  const supply=closingSupply(s,c);projectStep(s,c,supply);
+  const rooms=openPublicRooms(s,c);for(const pet of s.pets)schedule(s,pet,c,rooms,!!supply.length);generateInteraction(s,c,rooms);
  }
  // Skip only ticks without a threshold crossing; all mutations still use the same tick rules.
- function nextBoundary(s,c){if(s.project&&s.project.phase!=='work')return 1;let n=Math.max(1,s.nextEvent-s.ticks);for(const pet of s.pets){const a=pet.action;if(!a)continue;const rate=['install','dismantle','move','reuse'].includes(a.type)?s.multiplier:1;for(const end of [a.total,...(a.type==='production'&&!a.minted?[a.workEnd]:[])])n=Math.min(n,Math.max(1,Math.ceil((end-a.elapsed-1e-8)/(STEP*rate))));}for(const value of Object.values(s.regrowth))if(value>0)n=Math.min(n,Math.max(1,Math.round(value/STEP)));return n;}
+ function nextBoundary(s,c){
+  if(s.project&&s.project.phase!=='work')return 1;
+  let n=Math.max(1,s.nextEvent-s.ticks);
+  const limit=seconds=>{n=Math.min(n,Math.max(1,Math.ceil((seconds-1e-8)/STEP)));};
+  for(const e of s.interactions)if(e.publicRoom&&e.visitor.arriveAt>s.time)limit(e.visitor.arriveAt-s.time);
+  for(const pet of s.pets){
+   const a=pet.action;
+   if(!a){
+    if(!s.project&&pet.home){
+     const uses=s.publicUses.filter(u=>u.person===pet.id);
+     const cooldown=uses.reduce((end,u)=>Math.max(end,u.last+25),0);
+     for(const r of eligiblePublicRooms(openPublicRooms(s,c),c.pets.find(p=>p.id===pet.id))){
+      const at=Math.max(cooldown,(uses.find(u=>u.room===r.id)?.last??-Infinity)+r.activity.cooldown);
+      if(at-s.time>1e-8)limit(at-s.time);
+     }
+    }
+    continue;
+   }
+   const rate=['install','dismantle','move','reuse'].includes(a.type)?s.multiplier:1;
+   limit((a.total-a.elapsed)/rate);
+   if(a.type==='production'&&!a.minted)limit(a.workEnd-a.elapsed);
+   if(a.type==='public-use'&&!a.visited)limit(a.travelEnd-a.elapsed);
+  }
+  for(const value of Object.values(s.regrowth))if(value>0)limit(value);
+  return n;
+ }
  function advance(s,dt=STEP,c=CONFIG.create()){if(s.paused)return;requireRule(Number.isFinite(dt)&&dt>=0&&dt<=60,'无效模拟时间');const total=s.remainder+dt;let ticks=Math.floor((total+1e-9)/STEP);s.remainder=Math.max(0,total-ticks*STEP);if(s.remainder<1e-8)s.remainder=0;let first=true;while(ticks){const n=first?1:Math.min(ticks,nextBoundary(s,c));tick(s,c,n);ticks-=n;first=false;}}
  function validate(s,c=CONFIG.create()){
   validateConfig(c);const d=data(c);requireRule(s?.format==='town-modular','不支持此存档格式');requireRule(s.version===1&&s.configVersion===c.version&&s.scene===c.id&&s.signature===JSON.stringify(c.source||c),'存档版本或图纸配置不匹配，原记录已保留');
@@ -329,16 +425,46 @@
   const base=c.source||c;requireRule(Array.isArray(s.buildings)&&new Set(s.buildings.map(b=>b.id)).size===s.buildings.length,'建筑实例身份损坏');
   for(const b of s.buildings){requireRule(base.slots.some(slot=>slot.id===b.id&&slot.template===b.template),'未知建筑实例');requireRule(!L.placementError(base,{...s,buildings:s.buildings.filter(o=>o.id!==b.id)},b,{reserve:false}),'建筑布局、支撑或连接损坏');}
   requireRule(s.layout&&same(s.layout,layout(c,s.layout.seed))&&Number.isSafeInteger(s.eventRng)&&s.eventRng>=0&&s.eventRng<4294967296&&Number.isSafeInteger(s.nextEvent)&&s.nextEvent>s.ticks&&Number.isSafeInteger(s.nextInteraction)&&s.nextInteraction>0&&[0,1].includes(s.gardenStyle),'随机或互动时钟损坏');
-  requireRule(Number.isFinite(s.wallTime)&&s.wallTime>=0&&s.interactions.length<=c.interactions.slots&&new Set([...s.interactions,...s.interactionHistory].map(e=>e.id)).size===s.interactions.length+s.interactionHistory.length,'互动记录损坏');
+  const marketCount=s.interactions.filter(e=>e.publicRoom).length;
+  requireRule(Number.isFinite(s.wallTime)&&s.wallTime>=0&&marketCount<=1&&s.interactions.length-marketCount<=c.interactions.slots&&new Set([...s.interactions,...s.interactionHistory].map(e=>e.id)).size===s.interactions.length+s.interactionHistory.length,'互动记录损坏');
   for(const e of [...s.interactions,...s.interactionHistory])requireRule(['pickup','commission','assist'].includes(e.type)&&['active','ready','claimed','abandoned'].includes(e.status)&&Number.isInteger(e.progress)&&e.progress>=0&&e.progress<=e.clicks&&Object.entries({...e.input,...e.reward}).every(([k,n])=>k in c.materials&&Number.isSafeInteger(n)&&n>=0)&&(e.type!=='assist'||d.recipes.get(e.recipe)?.capability===e.assistKey),'互动任务损坏');
-  for(const e of [...s.interactions,...s.interactionHistory])requireRule(Number.isInteger(e.visitor.slot)&&e.visitor.slot>=0&&e.visitor.slot<c.interactions.slots&&[e.createdAt,e.point?.x,e.point?.y,e.visitor.from?.x,e.visitor.from?.y,e.visitor.arriveAt].every(Number.isFinite)&&e.visitor.arriveAt>e.createdAt&&(e.resolvedAt===undefined||Number.isFinite(e.resolvedAt)&&e.resolvedAt>=e.createdAt),'来访路线损坏');
+  requireRule(Array.isArray(s.publicUses)&&new Set(s.publicUses.map(u=>JSON.stringify([u.room,u.person]))).size===s.publicUses.length,'首次使用记录重复或损坏');
+  for(const u of s.publicUses){
+   const act=d.rooms.get(u.room)?.activity,done=s.completed.find(p=>c.plans.find(q=>q.id===p.id).slot===u.room);
+   const person=c.pets.find(p=>p.id===u.person);
+   requireRule(act&&done&&(act.visitor?.id===u.person||person&&act.capabilities?.some(k=>person.capabilities.includes(k)))&&
+    [u.first,u.last].every(Number.isFinite)&&done.time<=u.first&&u.first<=u.last&&u.last<=s.time,'首次使用记录损坏');
+  }
+  for(const e of [...s.interactions,...s.interactionHistory]){
+   const slot=e.visitor?.slot;
+   requireRule(Number.isInteger(slot)&&slot>=0&&(e.publicRoom?slot===c.interactions.slots:slot<c.interactions.slots)&&
+    [e.createdAt,e.point?.x,e.point?.y,e.visitor.from?.x,e.visitor.from?.y,e.visitor.arriveAt].every(Number.isFinite)&&e.visitor.arriveAt>e.createdAt&&
+    (e.resolvedAt===undefined||Number.isFinite(e.resolvedAt)&&e.resolvedAt>=e.createdAt),'来访路线损坏');
+   if(e.publicRoom){
+    const act=d.rooms.get(e.publicRoom)?.activity,camp=c.rooms.find(r=>r.initial).point,from={x:camp.x-72,y:camp.y};
+    requireRule(act?.visitor&&roomReady(s,e.publicRoom,c)&&e.type==='commission'&&e.clicks===0&&typeof e.returning==='boolean'&&
+     same(e.guest,act.visitor)&&same(e.input,act.input)&&same(e.reward,act.reward)&&same(e.point,act.point)&&same(e.visitor.from,from)&&
+     same(e.visitor.route,travel(s,from,act.point,e.publicRoom,c))&&e.visitor.arriveAt===e.createdAt+Math.max(10,distance(e.visitor.route)/92)&&
+     (e.status!=='claimed'||e.resolvedAt>=e.visitor.arriveAt),'街区来访记录损坏');
+   }else requireRule(!e.visitor.route&&!e.guest,'常规来访路线损坏');
+  }
   for(const [id,n]of Object.entries(s.assists))requireRule(c.recipes.some(r=>r.capability===id)&&Number.isInteger(n)&&n>=0&&n<=c.interactions.assistBatches,'协助批次损坏');
   requireRule(s.pets.length===c.pets.length&&new Set(s.pets.map(p=>p.id)).size===s.pets.length&&s.pets.every(p=>c.pets.some(q=>q.id===p.id)),'宠物身份损坏');
   const actions=s.pets.map(p=>p.action).filter(Boolean),facilities=actions.map(a=>a.facility).filter(Boolean);requireRule(new Set(actions.map(a=>a.id)).size===actions.length&&new Set(facilities).size===facilities.length,'居民或设施重复占用');
   requireRule(same([...s.decorations].sort(),[...new Set(c.plans.filter(p=>completed(s,p.id)).flatMap(p=>p.effect?.decorations||[]))].sort()),'装饰解锁记录损坏');
   const homes=s.pets.map(p=>p.home).filter(Boolean),targets=s.pets.map(p=>p.action?.bed).filter(Boolean);requireRule(new Set(homes).size===homes.length&&new Set(targets).size===targets.length,'床位重复占用');
   for(const pet of s.pets){requireRule([pet.x,pet.y].every(Number.isFinite)&&typeof pet.arrived==='boolean'&&(!pet.home||pet.arrived&&d.beds.has(pet.home)&&bedAvailable(s,d.beds.get(pet.home),c)),'住处或位置损坏');const a=pet.action;if(!a)continue;
-   requireRule(['production','install','dismantle','move','reuse','relocate'].includes(a.type)&&Number.isSafeInteger(a.elapsedTicks)&&a.elapsedTicks>=0&&a.elapsed===Math.min(a.total,a.elapsedTicks*STEP)&&a.elapsed>=0&&a.elapsed<=a.total+1e-7&&a.total>0&&[a.target.x,a.target.y,a.from.x,a.from.y].every(Number.isFinite),'任务进度损坏');
+   requireRule(['production','install','dismantle','move','reuse','relocate','public-use'].includes(a.type)&&Number.isSafeInteger(a.elapsedTicks)&&a.elapsedTicks>=0&&a.elapsed===Math.min(a.total,a.elapsedTicks*STEP)&&a.elapsed>=0&&a.elapsed<=a.total+1e-7&&a.total>0&&[a.target.x,a.target.y,a.from.x,a.from.y].every(Number.isFinite),'任务进度损坏');
+   if(a.type==='public-use'){
+    const room=d.rooms.get(a.room),def=c.pets.find(p=>p.id===pet.id);
+    requireRule(pet.home&&room?.activity&&roomAvailable(s,room.id,c)&&eligiblePublicRooms([room],def).length===1&&
+     c.plans.some(p=>p.slot===room.id&&completed(s,p.id))&&
+     !s.pets.some(other=>other!==pet&&other.action?.type==='public-use'&&other.action.room===room.id)&&
+     same(a.target,room.activity.point)&&same(a.route,travel(s,{x:pet.x,y:pet.y,escapeRoute:pet.escapeRoute},a.target,room.id,c))&&same(a.returnRoute,[...a.route].reverse())&&
+     a.travelEnd===Math.max(1,distance(a.route)/125)&&a.workEnd===a.travelEnd+room.activity.seconds&&
+     a.total===a.workEnd+a.travelEnd&&a.visited===(a.elapsed+1e-8>=a.travelEnd)&&
+     (!a.visited||s.publicUses.some(u=>u.room===a.room&&u.person===pet.id)),'公共活动损坏');
+   }
    if(a.type==='production'){const r=d.recipes.get(a.recipe);requireRule(r&&c.pets.find(p=>p.id===pet.id).capabilities.includes(r.capability)&&Number.isFinite(a.efficiency)&&a.efficiency>=1&&a.total===r.seconds/a.efficiency+4&&a.workEnd===r.seconds/a.efficiency+2&&same(a.output,r.output)&&a.workEnd<a.total&&a.minted===(a.elapsed+1e-8>=a.workEnd),'生产批次损坏');requireRule(a.materials.length===(a.minted?Object.values(r.output).reduce((a,b)=>a+b,0):0)&&new Set(a.materials).size===a.materials.length,'在途产物损坏');for(const[k,n]of Object.entries(r.output))requireRule(a.materials.filter(id=>s.materials.some(m=>m.id===id&&m.kind===k&&m.source===r.id&&m.owner===a.id)).length===(a.minted?n:0),'产物配方不符');}
    if(a.type==='relocate')requireRule(d.beds.has(a.bed)&&bedAvailable(s,d.beds.get(a.bed),c)&&!s.pets.some(p=>p!==pet&&p.home===a.bed),'搬迁目的床位损坏');
    if(['install','dismantle','move','reuse'].includes(a.type)){const t=c.plans.find(p=>p.id===s.project?.plan)?.tasks[s.project?.at];requireRule(s.project?.phase==='work'&&s.project.locked&&t?.type===a.type&&t.target===(a.part||a.group)&&c.pets.find(p=>p.id===pet.id).capabilities.includes('build'),'施工归属损坏');}
@@ -375,9 +501,24 @@
   }return true;
  }
  function save(s,c=CONFIG.create()){validate(s,c);return JSON.stringify(s);}
- function restore(text,c=CONFIG.create()){requireRule(typeof text==='string'&&text.length<4000000,'存档过大');const s=JSON.parse(text);validate(s,c);return s;}
+ function restore(text,c=CONFIG.create()){
+  requireRule(typeof text==='string'&&text.length<4000000,'存档过大');
+  const s=JSON.parse(text);
+  requireRule(s?.format==='town-modular','不支持此存档格式');
+  const base=c.source||c,signature=JSON.stringify(base);
+  if(s.signature!==signature&&signature===JSON.stringify(CONFIG.create())){
+   // Recreate the shipped configuration exactly before validating the saved site.
+   const legacy=CONFIG.create({street:false});
+   if(s.signature===JSON.stringify(legacy)){
+    s.publicUses=[];
+    validate(s,scene(s,legacy));
+    s.signature=signature;
+    syncObjects(s,scene(s,base));
+   }
+  }
+  validate(s,scene(s,base));return s;
+ }
  const api={STEP,SAVE_KEY,scene,candidates,visitorPose,currentPlan,capacity,efficiency,reserved,cycleGarden,interactionCheck,progressInteraction,claimInteraction,abandonInteraction,stableRecipes,layout,create,advance,inventory,debugSetInventory,preview,startProject,cancelProject,assignHome,parkFurniture,stow,roomReady,roomAvailable,bedAvailable,comfort,actionPoint,workStatus,validate,validateConfig,save,restore};
  for(const name of ['interactionCheck','progressInteraction','claimInteraction','abandonInteraction','cycleGarden','currentPlan','capacity','efficiency','stableRecipes','advance','inventory','debugSetInventory','assignHome','parkFurniture','stow','roomReady','roomAvailable','bedAvailable','comfort','actionPoint','workStatus','validate','save']){const fn=api[name];api[name]=function(s,...args){const pos={interactionCheck:1,progressInteraction:1,claimInteraction:1,abandonInteraction:1,efficiency:2,advance:1,inventory:0,debugSetInventory:1,assignHome:2,parkFurniture:1,stow:1,roomReady:1,roomAvailable:1,bedAvailable:1,comfort:1,actionPoint:1,workStatus:1}[name]??0;args[pos]=scene(s,args[pos]||CONFIG.create());return fn(s,...args);};}
- api.restore=function(text,c=CONFIG.create()){requireRule(typeof text==='string'&&text.length<4000000,'存档过大');const s=JSON.parse(text);requireRule(s?.format==='town-modular','不支持此存档格式');validate(s,scene(s,c));return s;};
  if(node)module.exports=api;else root.TownGrowthEngine=api;
 })(globalThis);

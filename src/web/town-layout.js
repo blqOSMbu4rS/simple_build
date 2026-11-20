@@ -113,7 +113,9 @@
     }
    }else connParts.push(add({id:pid('approach'),room:b.id,x:b.x-16,y:b.y,stairRise:16,stairUpRight:true,kind:'stairs',cost:{S:1},seconds:1.4,grounded:true,supports:[],style:v.parts[0].style,pixelRatio:30/16,connection:true}));
    const door=add({id:pid('entry'),room:b.id,x:b.x+entry.x-8,y:b.y-32,kind:'door',cost:{W:1},seconds:1.4,supports:v.floor.map(pid),style:v.parts[0].style,pixelRatio:30/16,layer:6,connection:true});
-   const room={id:b.id,name:base.templates.find(t=>t.id===b.template).name+' · '+(base.slots.filter(sl=>sl.template===b.template).findIndex(sl=>sl.id===b.id)+1),requirements:v.structural.map(pid),access:[...connParts,door],point:{x:b.x+v.width/2,y:b.y},instance:b.id,connection:co||null,entry:{x:b.x+entry.x,y:b.y}};c.rooms.push(room);
+   const room={id:b.id,name:base.templates.find(t=>t.id===b.template).name+' · '+(base.slots.filter(sl=>sl.template===b.template).findIndex(sl=>sl.id===b.id)+1),requirements:v.structural.map(pid),access:[...connParts,door],point:{x:b.x+v.width/2,y:b.y},instance:b.id,connection:co||null,entry:{x:b.x+entry.x,y:b.y}};
+   if(v.activity)room.activity={...clone(v.activity),point:point(v.activity.point)};
+   c.rooms.push(room);
    meta.set(b.id,{b,v,pid,supports,connParts,reusedLinks,door,room,entry});
   }
   c.plans=base.plans.map(p=>{const q={...clone(p),tasks:[],disable:[],settle:[],unlock:[]};

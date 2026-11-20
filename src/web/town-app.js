@@ -87,7 +87,7 @@
   let stage,detail,handling='automatic';
   if(p.phase==='preparing'){
    stage='正在准备';const delivery=s.pets.filter(pet=>pet.action?.type==='production'&&p.affected.includes(pet.action.room));const moves=p.moves.filter(m=>s.pets.find(p=>p.id===m.pet).home!==m.bed);
-   detail=delivery.length?'等待 '+delivery.map(p=>C.pets.find(d=>d.id===p.id).name).join('、')+' 的当前批次完成并交付':moves.length?'等待 '+moves.map(m=>C.pets.find(d=>d.id===m.pet).name+' 搬至'+roomName(m.bed)).join('、'):'正在检查住处与设施，随后自动施工';
+   detail=s.message.startsWith('临时停用设施前')?s.message:s.pets.some(pet=>pet.action?.type==='public-use')?'等待伙伴沿路离开公共场所，随后自动施工':delivery.length?'等待 '+delivery.map(p=>C.pets.find(d=>d.id===p.id).name).join('、')+' 的当前批次完成并交付':moves.length?'等待 '+moves.map(m=>C.pets.find(d=>d.id===m.pet).name+' 搬至'+roomName(m.bed)).join('、'):'正在检查住处与设施，随后自动施工';
   }else if(p.phase==='settling'){
    const arriving=plan.settle.filter(m=>s.pets.find(p=>p.id===m.pet).home!==m.bed);stage=arriving.some(m=>p.oldHomes.find(old=>old.pet===m.pet)?.home!==m.bed)?'正在入住':'正在安排返家';
    const moves=arriving.length?arriving:p.oldHomes.filter(old=>old.home&&p.moves.some(m=>m.pet===old.pet)&&!plan.settle.some(m=>m.pet===old.pet)&&E.bedAvailable(s,C.beds.find(b=>b.id===old.home),C)&&s.pets.find(p=>p.id===old.pet).home!==old.home).map(old=>({pet:old.pet,bed:old.home}));
@@ -159,9 +159,21 @@
   tray.style.left=((bounds.left-scene.left)/scale+Math.max(110,Math.min(bounds.width/scale-110,x*bounds.width/scale)))+'px';
   tray.style.top=((bounds.top-scene.top)/scale+Math.min(y*bounds.height/scale+12,bounds.height/scale-tray.offsetHeight-12))+'px';
  }
- function setView(id){autoFrame=false;level=id;Object.assign(camera,{x:0,y:0,zoom:1});for(const b of $('views').children)b.setAttribute('aria-pressed',String(b.dataset.level===level));if(s){R.draw(canvas,s,C,level,camera);updateVisitors();}}
+ function setView(id,fit=false){
+  autoFrame=false;level=id;Object.assign(camera,{x:0,y:0,zoom:1});
+  if(s&&fit&&id===overview.id){
+   const buildings=C.instances.filter(b=>s.buildings.some(x=>x.id===b.id));
+   const rect=R.viewRect(s,C,level,camera),left=Math.min(16,...buildings.map(b=>b.x))-40;
+   const right=Math.max(128,...buildings.map(b=>b.x+root.TownLayout.variant(B,b).width))+40;
+   const top=Math.min(...buildings.map(b=>b.y-root.TownLayout.variant(B,b).height))-36,bottom=312;
+   camera.x=(left+right-rect[2])/2-rect[0];camera.y=(top+bottom-rect[3])/2-rect[1];
+   camera.zoom=Math.min(1,rect[2]/(right-left),rect[3]/(bottom-top));
+  }
+  for(const b of $('views').children)b.setAttribute('aria-pressed',String(b.dataset.level===level));
+  if(s){R.draw(canvas,s,C,level,camera);positionSupplies();updateVisitors();}
+ }
  function activity(pet){
-  const a=pet.action;if(!a)return E.workStatus(s,pet,C);
+  const a=pet.action;if(!a||a.type==='public-use')return E.workStatus(s,pet,C);
   if(a.type==='production'){const r=C.recipes.find(r=>r.id===a.recipe);return r.name+(a.elapsed>=a.workEnd?' · 搬运交付':a.elapsed<2?' · 前往作业点':' · 作业中');}
   return names[a.type]||'工作中';
  }
@@ -181,7 +193,7 @@
  }
  function showPreview(id,keepReturn=false){
   capture();if(blocked()||s.project)return;const def=B.plans.find(p=>p.id===id);if(previewId!==id&&def.mode!=='build')previewChoice=null;if(def.mode==='build'&&previewChoice?.id!==def.slot)previewChoice=null;if(def.mode==='comfort'){const targets=s.buildings.filter(b=>b.template===def.targetTemplate);if(!targets.some(b=>b.id===previewChoice?.room))previewChoice={room:targets[0].id};}if(def.mode==='build'&&!previewChoice){beginPlacement(id);return;}previewId=id;const p=E.preview(s,B,id,previewChoice);if(!p)return;if(!keepReturn)previewReturn=picking?{placement:true}:{tab:activeTab,scroll:$('management-dialog').scrollTop,focus:document.activeElement};
-  R.blueprint($('blueprint-scene'),s,p);text('preview-title',title(p.plan));text('preview-description',p.plan.description.replace('连接验收后','入口接通后')+' '+benefits(p.plan,p.config)+(p.building?'。选址：'+placementName(p.building):''));text('diff-retained',listParts(p.retained,p.config));
+  R.blueprint($('blueprint-scene'),s,p);text('preview-title',title(p.plan));text('preview-description',p.plan.description.replace('连接验收后','入口接通后')+(p.config.rooms.find(r=>r.id===p.plan.targetRoom)?.activity?'':' '+benefits(p.plan,p.config))+(p.building?' 选址：'+placementName(p.building):''));text('diff-retained',listParts(p.retained,p.config));
   text('diff-moved',[...p.moved.map(id=>'搬出'+groups.get(id).label),...p.reused.map(id=>'复用'+groups.get(id).label)].join('；')||'无');
   text('diff-removed',listParts(p.removed,p.config));text('diff-added',listParts(p.added,p.config));
   text('preview-recovery','任务完成后预计回收：'+formatCost(p.recovery)+'；完整搬移家具不同时回收材料。');
@@ -225,7 +237,15 @@
    row.querySelector('.room-detail').textContent=(r.initial?'基础营地始终保留。':`结构与通道 ${built} / ${needed.length} 格就绪。`)+(facilities.length?' 已安装：'+facilities.map(g=>g.label).join('、')+'。':'');
   }
  }
- function updateJournal(){const sig=JSON.stringify(s.events);if($('event-log').dataset.signature!==sig){$('event-log').replaceChildren();for(const event of s.events)$('event-log').append(el('li','',timeLabel(event.time)+' · '+event.text));$('event-log').dataset.signature=sig;}}
+ function updateJournal(){
+  const firstUses=s.publicUses.map(u=>{
+   const room=rooms.get(u.room),name=room.activity.visitor?.name||C.pets.find(p=>p.id===u.person).name;
+   return {time:u.first,text:name+'第一次到「'+room.name+'」'+room.activity.label+'。'};
+  });
+  const events=[...firstUses,...s.events].sort((a,b)=>b.time-a.time);
+  const sig=JSON.stringify(events),log=$('event-log');
+  if(log.dataset.signature!==sig){log.replaceChildren();for(const event of events)log.append(el('li','',timeLabel(event.time)+' · '+event.text));log.dataset.signature=sig;}
+ }
  function storageEstimate(k){
   const remaining=E.capacity(s,C)[k]-E.inventory(s,C,false)[k]-E.reserved(s,k);if(remaining<1)return '本批次仓位已满。';
   if(s.project||s.paused||Object.values(s.assists).some(n=>n>0))return '产速随施工、暂停或协助变化，暂不估计满仓时间。';
@@ -267,7 +287,8 @@
   return name+' '+position+' · '+height;
  }
  function focusPlacement(b){if(!b)return;setView(overview.id);const rect=R.viewRect(s,C,level,camera);camera.x+=b.x+root.TownLayout.variant(B,b).width/2-(rect[0]+rect[2]/2);camera.y+=b.y-32-(rect[1]+rect[3]/2);}
- const interactionName=e=>({pickup:'拾取散落材料',commission:'来访委托',assist:'协助整理工具'})[e.type];
+ const guestName=e=>(e.returning?'熟客 ':'')+e.guest.name;
+ const interactionName=e=>e.guest?guestName(e)+' · 街口交换':({pickup:'拾取散落材料',commission:'来访委托',assist:'协助整理工具'})[e.type];
  function openInteraction(id,trigger=canvas){interactionId=id;updateInteraction();openDialog('interaction-dialog',trigger);}
  function updateInteraction(){
   const e=s.interactions.find(e=>e.id===interactionId);if(!e){if($('interaction-dialog').open)$('interaction-dialog').close();return;}text('interaction-title',interactionName(e));const node=$('interaction-detail');
@@ -276,7 +297,7 @@
   }
   node.querySelector('.interaction-cost').textContent='投入：'+formatCost(e.input)+'；所得：'+formatCost(e.reward);node.querySelector('.interaction-effect').textContent=e.type==='assist'?'整理 '+e.progress+' / '+e.clicks+' 次；'+C.recipes.filter(r=>r.capability===e.assistKey).map(r=>r.name).join(' / ')+'接下来三个批次作业效率 +10%，不缩短运输。':'确认后整笔结算；保护当前工程下一项施工用料。';
   const check=E.interactionCheck(s,e.id,C),arrived=E.visitorPose(s,e).arrived;node.querySelector('.interaction-reason').textContent=s.paused?'小镇已暂停，继续后可操作。':!arrived?'正在路上，到达后显示点击互动气泡。':check.error||'可以确认结算；不会重复发放。';
-  const b=node.querySelector('.primary');b.textContent=e.status==='active'?'整理一次':'确认领取 / 提交';b.disabled=blocked()||s.paused||!arrived||(e.status==='ready'&&!!check.error);node.querySelector('.text-button').disabled=blocked()||s.paused;
+  const b=node.querySelector('.primary');b.textContent=e.guest?'确认交换':e.status==='active'?'整理一次':'确认领取 / 提交';b.disabled=blocked()||s.paused||!arrived||(e.status==='ready'&&!!check.error);node.querySelector('.text-button').disabled=blocked()||s.paused;
  }
  function visitorTargets(){
   const rect=R.viewRect(s,C,level,camera),selected=C.view.levels.find(v=>v.id===level),b=canvas.getBoundingClientRect(),scene=document.querySelector('.landscape').getBoundingClientRect(),scale=scene.width/document.querySelector('.landscape').offsetWidth;
@@ -285,7 +306,7 @@
  function updateVisitors(){
   positionSupplies();
   const bubbles=$('visitor-bubbles'),hints=$('visitor-hints'),shown=new Set();for(const [index,{e,pose,x,y,visible}]of visitorTargets().entries()){shown.add(e.id);let b=[...bubbles.children].find(n=>n.dataset.event===e.id);if(!b){b=el('button','visitor-bubble','点击互动');b.dataset.event=e.id;b.onpointerdown=event=>canvas.onpointerdown(event);b.onclick=event=>{if(event.detail===0)openInteraction(e.id,b);};bubbles.append(b);}b.hidden=!visible||!pose.arrived;b.style.left=x+'px';b.style.top=(y-38-index%2*34)+'px';b.setAttribute('aria-label',interactionName(e)+'，点击查看详情');
-   let hint=[...hints.children].find(n=>n.dataset.event===e.id);if(!hint){hint=el('button','visitor-card');hint.dataset.event=e.id;const portrait=el('canvas');portrait.width=24;portrait.height=24;portrait.setAttribute('aria-hidden','true');R.visitorPortrait(portrait,e);hint.append(portrait,el('strong','',({pickup:'送来材料',commission:'来访委托',assist:'整理工具'})[e.type]),el('small'));hint.onclick=()=>openInteraction(e.id,hint);hints.append(hint);}hint.querySelector('small').textContent=pose.arrived?'点击互动':'正在路上';hint.setAttribute('aria-label',interactionName(e)+'，'+(pose.arrived?'点击查看详情':'正在路上，可查看详情'));
+   let hint=[...hints.children].find(n=>n.dataset.event===e.id);if(!hint){hint=el('button','visitor-card');hint.dataset.event=e.id;const portrait=el('canvas');portrait.width=24;portrait.height=24;portrait.setAttribute('aria-hidden','true');R.visitorPortrait(portrait,e);hint.append(portrait,el('strong','',e.guest?guestName(e):({pickup:'送来材料',commission:'来访委托',assist:'整理工具'})[e.type]),el('small'));hint.onclick=()=>openInteraction(e.id,hint);hints.append(hint);}hint.querySelector('small').textContent=pose.arrived?'点击互动':'正在路上';hint.setAttribute('aria-label',interactionName(e)+'，'+(pose.arrived?'点击查看详情':'正在路上，可查看详情'));
   }for(const node of [...bubbles.children,...hints.children])if(!shown.has(node.dataset.event))node.remove();
  }
  function debugLimit(state,k){return Math.max(0,E.capacity(state,C)[k]-state.pets.reduce((n,p)=>n+(p.action?.output?.[k]||0),0));}
@@ -336,7 +357,7 @@
   for(const def of C.pets){const row=el('div','resident');row.dataset.pet=def.id;const mark=el('span','pet-mark');mark.style.setProperty('--pet',def.color);mark.setAttribute('aria-hidden','true');const info=el('div'),name=el('div');name.append(el('strong','',def.name),el('span','pet-role',def.capabilities.includes('build')?'建造伙伴':C.recipes.filter(r=>def.capabilities.includes(r.capability)).map(r=>r.name).join(' / ')));
    const details=el('details'),select=el('select');select.setAttribute('aria-label','为'+def.name+'分配床位');select.onchange=()=>act(()=>toast(E.assignHome(s,def.id,select.value,C)?'已安排搬迁，小伙伴会自己过去。':'暂时无法搬迁，请检查床位与工作状态。'));details.append(el('summary','','安排住处'),select,el('p','home-hint'));info.append(name,el('p','home'),el('p','activity'),details);row.append(mark,info);$('residents').append(row);}
   for(const r of C.rooms){const row=el('article','room-card');row.dataset.room=r.id;const head=el('div','room-heading');head.append(el('strong','',r.name),el('span','state-pill'));const b=el('button','','查看所在区域');b.onclick=()=>{$('management-dialog').close();setView(overview.id);const at=rooms.get(r.id).point,rect=R.viewRect(s,C,level,camera);camera.x+=at.x-(rect[0]+rect[2]/2);camera.y+=at.y-32-(rect[1]+rect[3]/2);refresh();canvas.focus();};row.append(head,el('p','room-beds'),el('p','room-detail'),b);$('rooms').append(row);}
-  for(const l of C.view.levels){const b=el('button','',l.name);b.dataset.level=l.id;b.setAttribute('aria-pressed',String(l.id===level));b.onclick=()=>setView(l.id);$('views').append(b);}
+  for(const l of C.view.levels){const b=el('button','',l.name);b.dataset.level=l.id;b.setAttribute('aria-pressed',String(l.id===level));b.onclick=()=>setView(l.id,true);$('views').append(b);}
   const redraw=()=>{if(s){R.draw(canvas,s,C,level,camera);updateVisitors();}};
   const pan=delta=>{autoFrame=false;camera.x+=delta;redraw();};
   $('site-supplies').onclick=()=>setTab('storage',$('site-supplies'));

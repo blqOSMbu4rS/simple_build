@@ -3,7 +3,7 @@
  'use strict';
  const box=(c,x,y,w,h,color)=>{c.fillStyle=color;c.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));};
  function polygon(c,pts,color){c.fillStyle=color;c.beginPath();pts.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();c.fill();}
- const names={floor:'地基／楼板',post:'承重柱',beam:'横梁',wall:'木墙',window:'窗墙',door:'出入口',roof:'屋顶',stairs:'外楼梯',partition:'隔断',furniture:'家具',sign:'招牌',drying:'晾晒架',quilt:'床品',curtain:'窗帘',lamp:'灯'};
+ const names={floor:'地基／楼板',post:'承重柱',beam:'横梁',wall:'木墙',window:'窗墙',door:'出入口',roof:'屋顶',stairs:'外楼梯',partition:'隔断',furniture:'家具',sign:'招牌',drying:'晾晒架',quilt:'床品',curtain:'窗帘',lamp:'灯',canvas:'青布棚面','timber-rack':'木件料架','tree-trunk':'院树树干','tree-crown':'院树枝叶','long-table':'长桌',stool:'凳子',awning:'莓红布篷','awning-light':'帆布条','stall-counter':'交换摊台','market-crate':'交换货箱'};
  function tree(c,x,y,size,time){
   box(c,x-2,y-size,5,size,'#574d3c');
   for(let j=0;j<6;j++){const w=12+Math.round(Math.sin(j*.7)*12),yy=y-size-12+j*5;box(c,x-w/2,yy,w,7,j%3===0?'#42645a':'#34584f');box(c,x-w/2+2,yy,5,2,'#55756a');}
@@ -43,6 +43,17 @@
    case 'quilt':b(10,9,40,12,'#b4867d');b(12,9,36,2,'#ddbaa4');for(let x=14;x<48;x+=7)b(x,14,2,2,'#dfb99d');break;
    case 'curtain':b(0,0,5,30,'#b28c7e');b(25,0,5,30,'#b28c7e');b(0,0,30,3,'#d5b894');break;
    case 'lamp':b(13,6,2,24,'#c2a576');b(7,3,15,9,'#eccb8d');b(6,28,18,2,'#bda074');break;
+   case 'canvas':case 'awning':case 'awning-light':{
+    const [cloth,edge]=p.kind==='canvas'?['#448f87','#8cc3ad']:p.kind==='awning'?['#ae615e','#e38d78']:['#dfbd83','#f3d7a0'];
+    b(0,8,30,17,cloth);b(0,8,30,3,edge);b(0,24,30,3,edge);b(2,27,11,3,cloth);b(17,27,11,3,cloth);break;
+   }
+   case 'timber-rack':b(2,26,26,4,'#654733');b(1,19,28,5,'#a66f42');b(4,14,25,4,'#c3925e');b(5,10,20,3,'#e2b680');b(23,14,6,4,'#e7b980');break;
+   case 'tree-trunk':b(11,-2,9,62,'#795e47');b(12,1,3,55,'#b18a5e');b(4,-3,25,6,'#688659');b(20,54,8,6,'#795e47');break;
+   case 'tree-crown':b(0,16,30,34,'#52774f');b(5,8,25,13,'#72975b');b(10,4,14,8,'#8bab69');b(3,28,19,9,'#698e57');b(22,19,8,7,'#94a969');b(10,45,13,7,'#486d4b');b(13,20,4,3,'#d5b575');break;
+   case 'long-table':b(0,13,30,4,'#d6a671');b(0,17,30,3,'#81583b');b(3,20,4,10,'#916849');b(16,9,8,4,'#abb499');break;
+   case 'stool':b(5,20,22,4,'#d5a16a');b(6,24,4,6,'#825a3e');b(20,24,4,6,'#825a3e');break;
+   case 'stall-counter':b(0,10,30,20,'#956546');b(0,8,30,5,'#d1a46b');b(2,23,26,2,'#c39360');b(4,3,9,5,'#d8a679');b(19,1,9,7,'#91a97d');break;
+   case 'market-crate':b(4,13,23,17,'#9d744c');b(4,13,23,3,'#cca871');b(8,16,2,14,'#d1a970');b(21,16,2,14,'#d1a970');break;
    case 'furniture':
     if(p.art.type==='bed'){b(0,14,30,12,'#876344');b(0,10,30,5,'#c7b48a');b(3,26,4,4,'#594532');if(p.art.index===0){b(0,5,4,25,st.light);b(7,8,17,6,'#e4d2ae');}if(p.art.index===p.art.cols-1)b(26,12,4,18,st.light);}
     else if(p.art.type==='loom'){b(3,0,4,30,st.light);b(24,0,4,30,st.wood);b(0,2,30,3,st.light);b(0,24,30,3,st.light);for(let x=9;x<23;x+=3)b(x,5,1,19,'#d4c7a5');b(7,14,18,6,'#ad8a87');}
@@ -71,13 +82,16 @@
    case 'lamp':box(c,x+5,y+3,1,13,'#b29d71');box(c,x+3,y+1,6,5,'#e9c484');box(c,x+2,y+15,8,1,'#b49a6d');break;
   }
  }
- function pet(c,def,pose,time){const x=Math.round(pose.x),y=Math.round(pose.y),step=['walk','carry','climb','deliver','fetch'].includes(pose.phase)?Math.round(Math.sin(time*14)):0;
+ function pet(c,def,pose,time){const x=Math.round(pose.x),y=Math.round(pose.y)+(pose.phase==='sit'?3:0),step=['walk','carry','climb','deliver','fetch'].includes(pose.phase)?Math.round(Math.sin(time*14)):0;
   box(c,x-5,y-2,10,2,'#213b35');box(c,x-4,y-9,8,8,def.color);box(c,x-5,y-12,10,6,def.color);
   if(def.species==='bunny'){box(c,x-4,y-16,3,5,def.color);box(c,x+2,y-16,3,5,def.color);box(c,x-3,y-15,1,3,'#ae837b');}
   else{polygon(c,[[x-5,y-10],[x-5,y-16],[x-1,y-12]],def.color);polygon(c,[[x+1,y-12],[x+5,y-16],[x+5,y-10]],def.color);}
   box(c,x-2,y-10,1,1,'#34312d');box(c,x+2,y-10,1,1,'#34312d');box(c,x-2,y-7,5,2,'#e2cfad');box(c,x-3,y-2+step,2,2,'#aa8e72');box(c,x+2,y-2-step,2,2,'#aa8e72');
   box(c,x-3,y-5,6,3,def.species==='fox'?'#697e74':def.species==='cat'?'#9a7d87':'#708d92');
-  if(pose.held==='W')root.TownPetWorkArt?.timberOverlay(c,{log:{x:x+5,y:y-5,length:12,diameter:4}},time);
+  if(def.scarf){box(c,x-5,y-7,10,2,'#b98759');box(c,x+3,y-5,2,4,'#e0ad72');}
+  if(pose.phase==='sort'){const offset=Math.floor(time*4)%3;box(c,x+2,y-8+offset,9,3,'#c49359');box(c,x+8,y-8+offset,3,3,'#e3bf86');}
+  if(pose.held==='W'&&root.TownPetWorkArt)root.TownPetWorkArt.timberOverlay(c,{log:{x:x+5,y:y-5,length:12,diameter:4}},time);
+  else if(pose.held==='W')box(c,x+3,y-7,8,3,'#ca9564');
   else if(pose.held)box(c,x+3,y-7,6,5,pose.held==='S'?'#8d9b96':pose.held==='C'?'#bc9b94':'#e0dec5');
   if(pose.hammer){const dy=Math.floor(time*7)%2*3;box(c,x+7,y-13+dy,2,8,'#b08d62');box(c,x+5,y-14+dy,7,3,'#a3b4ab');}
  }
@@ -89,8 +103,10 @@
  }
  function visitorPortrait(canvas,event){
   const c=canvas.getContext('2d');c.clearRect(0,0,canvas.width,canvas.height);c.imageSmoothingEnabled=false;
-  pet(c,{species:'cat',color:event.type==='pickup'?'#d3c39b':event.type==='assist'?'#8ec4b6':'#c79eaa'},{x:12,y:21,phase:'idle'},0);
+  pet(c,visitorStyle(event),{x:12,y:21,phase:'idle'},0);
  }
+ function visitorStyle(e){return e.guest?{...e.guest,scarf:true}:{species:'cat',color:e.type==='pickup'?'#d3c39b':e.type==='assist'?'#8ec4b6':'#c79eaa'};}
+ function caption(c,text,x,y){c.font='8px sans-serif';const w=c.measureText(text).width;box(c,x-w/2-3,y-8,w+6,11,'#2b4941');c.fillStyle='#f1dfb6';c.fillText(text,x-w/2,y);}
  function visitorVisible(p,selected,rect,overlays=[]){
   if(selected.plot||selected.yRange&&(p.y<selected.yRange[0]||p.y>selected.yRange[1]))return false;
   if(!rect)return true;const x=(p.x-rect[0])/rect[2],y=(p.y-rect[1])/rect[3];
@@ -124,14 +140,24 @@
   for(const event of [...s.interactionHistory.filter(e=>e.visitor&&e.resolvedAt+8>s.time),...s.interactions]){
    const pose=E.visitorPose(s,event);if(pose.gone||!visitorVisible(pose,selected,rect,camera.overlays))continue;
    const time=Math.floor(s.time*(pose.phase==='walk'?8:5))/(pose.phase==='walk'?8:5);
-   pet(c,{species:'cat',color:event.type==='pickup'?'#d3c39b':event.type==='assist'?'#8ec4b6':'#c79eaa'},pose,time);
+   pet(c,visitorStyle(event),pose,time);
    if(pose.arrived){box(c,pose.x-4,pose.y-22+Math.floor(time*5)%2,8,5,'#eee0b7');box(c,pose.x-1,pose.y-20,2,2,'#405b48');}
   }
   // Local lights have fixed positions and are evaluated from completed fixtures.
   for(const p of ordered.filter(p=>p.kind==='lamp')){c.globalAlpha=.12;box(c,p.x-9,p.y,30,22,'#ffd997');c.globalAlpha=1;part(c,p,s.objects[p.id],s.time);}
   const build=s.pets.find(p=>['install','dismantle','reuse','move'].includes(p.action?.type));
   if(build){const a=build.action,p=cfg.parts.find(p=>p.id===a.part),pos=p&&s.objects[p.id];if(pos&&visible(pos)){c.strokeStyle=a.type==='dismantle'?'#d7957a':'#e6c888';c.setLineDash([2,2]);c.strokeRect(pos.x-.5,pos.y-.5,17,17);c.setLineDash([]);if(a.type==='install'){const pose=E.actionPoint(s,build,cfg);if(pose.hammer){c.globalAlpha=.5;part(c,p,pos,s.time);c.globalAlpha=1;}}}}
-  for(const petState of s.pets){if(!petState.arrived)continue;const def=cfg.pets.find(p=>p.id===petState.id),pose=E.actionPoint(s,petState,cfg);if(!selected.yRange||pose.y>=selected.yRange[0]&&pose.y<=selected.yRange[1])pet(c,def,pose,Math.floor(s.time*8)/8);}
+  for(const petState of s.pets){if(!petState.arrived)continue;const def=cfg.pets.find(p=>p.id===petState.id),pose=E.actionPoint(s,petState,cfg);if(!selected.yRange||pose.y>=selected.yRange[0]&&pose.y<=selected.yRange[1]){
+   pet(c,def,pose,Math.floor(s.time*8)/8);
+   if(pose.phase==='sort'||pose.phase==='sit')caption(c,def.name,pose.x,pose.y-21);
+  }}
+  if(cfg.rooms.some(r=>r.activity&&s.completed.some(q=>cfg.plans.find(p=>p.id===q.id)?.slot===r.id))){
+   const origin=cfg.plans.find(p=>p.mode==='refit'&&s.completed.some(q=>q.id===p.id));
+   for(const r of cfg.rooms.filter(r=>visible({room:r.id})&&E.roomReady(s,r.id,cfg))){
+    if(r.id===origin?.targetRoom)caption(c,'老屋 · 木作所',r.point.x,r.point.y-42);
+    else if(r.activity)caption(c,r.name.split(' · ')[0],r.point.x,r.point.y-43);
+   }
+  }
   if(selected.overview){c.font='7px monospace';c.fillStyle='#c3c4ac';c.fillText('营地',44,288);c.fillText('木石料垛',92,288);}
   c.restore();canvas.dataset.level=selected.id;canvas.dataset.installed=String(ordered.length);
  }
